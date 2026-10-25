@@ -26,6 +26,8 @@ type picker struct {
 	folders []string
 	shown   []string
 	cursor  int
+	path    string
+	state   int
 }
 
 func existingFolders(summaries map[string]transcript.Summary) []string {
@@ -62,7 +64,14 @@ func newPicker(folders []string, width int) *picker {
 func (p *picker) filter() {
 	terms := strings.Fields(strings.ToLower(p.input.Value()))
 	p.shown = p.shown[:0]
+	p.path, p.state = resolveTyped(p.input.Value())
+	if p.state == pathOK {
+		p.shown = append(p.shown, p.path)
+	}
 	for _, f := range p.folders {
+		if p.state == pathOK && f == p.path {
+			continue
+		}
 		hay := strings.ToLower(f)
 		match := true
 		for _, t := range terms {
@@ -85,7 +94,7 @@ func (m *model) pickerKey(msg tea.KeyPressMsg) tea.Cmd {
 		m.picker = nil
 		return m.zoom(false)
 	case "enter":
-		if len(p.shown) == 0 {
+		if len(p.shown) == 0 || p.state == pathMissing {
 			return nil
 		}
 		m.picker = nil
@@ -96,10 +105,15 @@ func (m *model) pickerKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "down":
 		p.cursor = min(p.cursor+1, max(len(p.shown)-1, 0))
 		return nil
+	case "tab":
+		return complete(p.input.Value())
 	}
 	var cmd tea.Cmd
 	p.input, cmd = p.input.Update(msg)
 	p.filter()
+	if p.state == pathOK {
+		p.cursor = 0
+	}
 	return cmd
 }
 
@@ -113,12 +127,19 @@ func (p *picker) view(w, h int, focused bool) string {
 		if home != "" && (f == home || strings.HasPrefix(f, home+"/")) {
 			f = "~" + f[len(home):]
 		}
+		if i == 0 && p.state == pathOK {
+			f = "Start in " + f
+		}
 		body = append(body, ansi.Truncate(selectionBar(i == p.cursor, focused)+f, w, "…"))
 	}
-	if len(p.shown) == 0 {
+	switch {
+	case p.state == pathMissing:
+		body = append(body, gray.Render("no such folder"))
+	case len(p.shown) == 0:
 		body = append(body, gray.Render("No folders match."))
 	}
-	return page(body, gray.Render(ansi.Truncate("↑↓ move  enter start  esc cancel", w, "")), h)
+	hint := gray.Render("↑↓ move  tab complete") + "\n" + gray.Render("enter start  esc cancel")
+	return page(body, hint, h)
 }
 
 type renameDialog struct {
