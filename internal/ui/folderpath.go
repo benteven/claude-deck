@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -15,9 +16,15 @@ const (
 	pathMissing
 )
 
+const maxScan = 2000
+
 type inspectedMsg struct {
-	from, path, ghost string
-	state             int
+	from, path string
+	state      int
+}
+
+type ghostMsg struct {
+	from, to string
 }
 
 func expandHome(p string) string {
@@ -32,7 +39,7 @@ func expandHome(p string) string {
 }
 
 func resolveTyped(v string) (string, int) {
-	if v == "" || !strings.ContainsRune("/~.", rune(v[0])) {
+	if !pathLike(v) {
 		return "", pathNone
 	}
 	abs, err := filepath.Abs(expandHome(v))
@@ -49,7 +56,8 @@ func commonPrefix(names []string) string {
 	prefix := names[0]
 	for _, n := range names[1:] {
 		for !strings.HasPrefix(n, prefix) {
-			prefix = prefix[:len(prefix)-1]
+			_, size := utf8.DecodeLastRuneInString(prefix)
+			prefix = prefix[:len(prefix)-size]
 		}
 	}
 	return prefix
@@ -61,17 +69,24 @@ func ghostFor(typed string) string {
 		return ""
 	}
 	dir, seg := typed[:i+1], typed[i+1:]
-	entries, err := os.ReadDir(expandHome(dir))
+	d, err := os.Open(expandHome(dir))
 	if err != nil {
 		return ""
 	}
+	defer d.Close()
+	entries, _ := d.ReadDir(maxScan)
 	var names []string
 	for _, e := range entries {
 		name := e.Name()
 		if !strings.HasPrefix(name, seg) || (strings.HasPrefix(name, ".") && !strings.HasPrefix(seg, ".")) {
 			continue
 		}
-		if info, err := os.Stat(filepath.Join(expandHome(dir), name)); err == nil && info.IsDir() {
+		isDir := e.IsDir()
+		if e.Type()&os.ModeSymlink != 0 {
+			info, err := os.Stat(filepath.Join(expandHome(dir), name))
+			isDir = err == nil && info.IsDir()
+		}
+		if isDir {
 			names = append(names, name)
 		}
 	}
@@ -92,6 +107,12 @@ func ghostFor(typed string) string {
 func inspect(typed string) tea.Cmd {
 	return func() tea.Msg {
 		path, state := resolveTyped(typed)
-		return inspectedMsg{from: typed, path: path, state: state, ghost: ghostFor(typed)}
+		return inspectedMsg{from: typed, path: path, state: state}
+	}
+}
+
+func ghost(typed string) tea.Cmd {
+	return func() tea.Msg {
+		return ghostMsg{from: typed, to: ghostFor(typed)}
 	}
 }

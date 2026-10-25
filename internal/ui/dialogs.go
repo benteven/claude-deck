@@ -29,6 +29,8 @@ type picker struct {
 	path    string
 	state   int
 	checked string
+	ghost   string
+	ghostOf string
 }
 
 func pathLike(v string) bool {
@@ -36,7 +38,7 @@ func pathLike(v string) bool {
 }
 
 func (p *picker) resolved() int {
-	if p.checked != p.input.Value() {
+	if !pathLike(p.input.Value()) {
 		return pathNone
 	}
 	return p.state
@@ -97,7 +99,11 @@ func (p *picker) filter() {
 		}
 	}
 	p.cursor = min(p.cursor, max(len(p.shown)-1, 0))
-	p.input.SetSuggestions(p.recentGhost())
+	if p.ghost != "" && p.ghostOf == p.input.Value() {
+		p.input.SetSuggestions([]string{p.ghost})
+	} else {
+		p.input.SetSuggestions(p.recentGhost())
+	}
 }
 
 func (p *picker) recentGhost() []string {
@@ -147,7 +153,7 @@ func (m *model) pickerKey(msg tea.KeyPressMsg) tea.Cmd {
 	var cmd tea.Cmd
 	p.input, cmd = p.input.Update(msg)
 	p.filter()
-	return tea.Batch(cmd, inspect(p.input.Value()))
+	return tea.Batch(cmd, inspect(p.input.Value()), ghost(p.input.Value()))
 }
 
 func (p *picker) view(w, h int, focused bool) string {
@@ -160,10 +166,14 @@ func (p *picker) view(w, h int, focused bool) string {
 		if home != "" && (f == home || strings.HasPrefix(f, home+"/")) {
 			f = "~" + f[len(home):]
 		}
+		bar := selectionBar(i == p.cursor, focused)
 		if i == 0 && p.resolved() == pathOK {
-			f = "Start in " + f
+			bar += "Start in "
+			if avail := w - ansi.StringWidth(bar); ansi.StringWidth(f) > avail {
+				f = ansi.TruncateLeft(f, ansi.StringWidth(f)-max(avail, 1)+1, "…")
+			}
 		}
-		body = append(body, ansi.Truncate(selectionBar(i == p.cursor, focused)+f, w, "…"))
+		body = append(body, ansi.Truncate(bar+f, w, "…"))
 	}
 	switch {
 	case p.resolved() == pathMissing:
