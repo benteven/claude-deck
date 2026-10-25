@@ -896,6 +896,15 @@ func runningAgents(ids []string, evs map[string]events.State, sessions []live.Se
 
 func (m *model) followClear(msg refreshMsg) tea.Cmd {
 	var cmds []tea.Cmd
+	present := map[string]bool{}
+	for _, p := range msg.panes {
+		present[p.ID] = true
+	}
+	for id := range m.followed {
+		if !present[id] {
+			delete(m.followed, id)
+		}
+	}
 	for i, p := range msg.panes {
 		if want, ok := m.followed[p.ID]; ok {
 			if p.SessionID == want || p.Dead {
@@ -908,12 +917,21 @@ func (m *model) followClear(msg refreshMsg) tea.Cmd {
 		if p.Dead || p.SessionID == "" || p.PID <= 0 {
 			continue
 		}
-		j := slices.IndexFunc(msg.live, func(l live.Session) bool { return l.PID == p.PID && l.SessionID != p.SessionID })
+		var next live.Session
+		for _, l := range msg.live {
+			if l.PID == p.PID && !m.ending[l.SessionID] && l.StartedAt >= next.StartedAt {
+				next = l
+			}
+		}
 		k := slices.IndexFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == p.SessionID })
-		if j < 0 || k < 0 || slices.ContainsFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == msg.live[j].SessionID }) {
+		if next.SessionID == "" || next.SessionID == p.SessionID || k < 0 || !startedAfter(next.StartedAt, p.StartTime) {
 			continue
 		}
-		old, next := p.SessionID, msg.live[j]
+		if slices.ContainsFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == next.SessionID }) ||
+			slices.ContainsFunc(msg.files, func(f transcript.File) bool { return f.SessionID == next.SessionID }) {
+			continue
+		}
+		old := p.SessionID
 		entry := &m.state.Active[k]
 		entry.SessionID, entry.Name = next.SessionID, ""
 		if next.Cwd != "" {
@@ -929,8 +947,18 @@ func (m *model) followClear(msg refreshMsg) tea.Cmd {
 			m.followed = map[string]string{}
 		}
 		m.followed[p.ID] = next.SessionID
+		m.markEnding(old)
 		msg.panes[i].SessionID = next.SessionID
 		delete(msg.events, old)
+		if m.rename != nil && m.rename.pane == p.ID {
+			m.rename = nil
+		}
+		if m.restart != nil && m.restart.row.PaneID == p.ID {
+			m.restart = nil
+		}
+		if !m.dialogOpen() {
+			cmds = append(cmds, m.zoom(false))
+		}
 		eventsDir := filepath.Join(m.home, "events")
 		cmds = append(cmds, m.tmux("set-option", "-p", "-t", p.ID, "@deck-session", next.SessionID), m.saveState(), func() tea.Msg {
 			events.Remove(eventsDir, old)
@@ -938,6 +966,13 @@ func (m *model) followClear(msg refreshMsg) tea.Cmd {
 		})
 	}
 	return tea.Batch(cmds...)
+}
+
+func startedAfter(startedAt, paneStart int64) bool {
+	if startedAt < 1e11 {
+		startedAt *= 1000
+	}
+	return startedAt >= paneStart*1000
 }
 
 func (m *model) apply(msg refreshMsg) tea.Cmd {
