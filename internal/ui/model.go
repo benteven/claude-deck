@@ -222,13 +222,15 @@ func (m *model) dialogFlag() tea.Cmd {
 
 func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case completedMsg:
+	case inspectedMsg:
 		if p := m.picker; p != nil && p.input.Value() == msg.from {
-			p.input.SetValue(msg.to)
-			p.input.CursorEnd()
+			p.path, p.state, p.checked = msg.path, msg.state, msg.from
 			p.filter()
 			if p.state == pathOK {
 				p.cursor = 0
+			}
+			if msg.ghost != "" {
+				p.input.SetSuggestions([]string{msg.ghost})
 			}
 		}
 		return m, nil
