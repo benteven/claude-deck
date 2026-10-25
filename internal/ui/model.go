@@ -51,23 +51,38 @@ type prStateMsg struct {
 	err        error
 }
 
-type pidStarts struct {
-	mu sync.Mutex
-	at map[int]time.Time
+type paneProc struct {
+	pane string
+	pid  int
 }
 
-func (s *pidStarts) get(pid int) time.Time {
+type pidStarts struct {
+	mu sync.Mutex
+	at map[paneProc]time.Time
+}
+
+func (s *pidStarts) get(k paneProc) time.Time {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if t, ok := s.at[pid]; ok {
+	if t, ok := s.at[k]; ok {
 		return t
 	}
-	t, _, err := deck.ProcessStart(pid)
+	t, _, err := deck.ProcessStart(k.pid)
 	if err != nil {
 		return time.Time{}
 	}
-	s.at[pid] = t
+	s.at[k] = t
 	return t
+}
+
+func (s *pidStarts) keep(keys map[paneProc]bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k := range s.at {
+		if !keys[k] {
+			delete(s.at, k)
+		}
+	}
 }
 
 type refreshMsg struct {
@@ -210,7 +225,7 @@ func Run() error {
 		state:      state,
 		want:       &slotWant{},
 		saver:      &stateSaver{},
-		starts:     &pidStarts{at: map[int]time.Time{}},
+		starts:     &pidStarts{at: map[paneProc]time.Time{}},
 		focused:    true,
 		prs:        map[string]*prEntry{},
 		prSem:      make(chan struct{}, prParallel),
@@ -865,11 +880,15 @@ func (m *model) refresh() tea.Cmd {
 		msg := refreshMsg{panes: panes, files: files, folders: folders, events: map[string]events.State{}, summaries: map[string]transcript.Summary{}}
 		msg.live, _ = live.Running(claudeHome)
 		msg.starts = map[int]time.Time{}
+		keys := map[paneProc]bool{}
 		for _, p := range panes {
 			if !p.Dead && p.SessionID != "" && p.PID > 0 {
-				msg.starts[p.PID] = starts.get(p.PID)
+				k := paneProc{p.ID, p.PID}
+				keys[k] = true
+				msg.starts[p.PID] = starts.get(k)
 			}
 		}
+		starts.keep(keys)
 		for _, id := range ids {
 			if ev, err := events.Read(filepath.Join(home, "events"), id); err == nil {
 				msg.events[id] = ev
