@@ -222,6 +222,22 @@ func (m *model) dialogFlag() tea.Cmd {
 
 func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case inspectedMsg:
+		if p := m.picker; p != nil && p.input.Value() == msg.from {
+			changed := msg.path != p.path || msg.state != p.state
+			p.path, p.state, p.checked = msg.path, msg.state, msg.from
+			p.filter()
+			if changed && p.state == pathOK {
+				p.cursor = 0
+			}
+		}
+		return m, nil
+	case ghostMsg:
+		if p := m.picker; p != nil && p.input.Value() == msg.from {
+			p.ghost, p.ghostOf = msg.to, msg.from
+			p.filter()
+		}
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		if m.picker != nil {

@@ -26,6 +26,22 @@ type picker struct {
 	folders []string
 	shown   []string
 	cursor  int
+	path    string
+	state   int
+	checked string
+	ghost   string
+	ghostOf string
+}
+
+func pathLike(v string) bool {
+	return v != "" && strings.ContainsRune("/~.", rune(v[0]))
+}
+
+func (p *picker) resolved() int {
+	if !pathLike(p.input.Value()) {
+		return pathNone
+	}
+	return p.state
 }
 
 func existingFolders(summaries map[string]transcript.Summary) []string {
@@ -54,6 +70,7 @@ func newPicker(folders []string, width int) *picker {
 	p := &picker{input: textinput.New(), folders: folders}
 	p.input.Prompt = "> "
 	p.input.Placeholder = "filter folders"
+	p.input.ShowSuggestions = true
 	p.input.SetWidth(max(width-4, 1))
 	p.filter()
 	return p
@@ -62,7 +79,13 @@ func newPicker(folders []string, width int) *picker {
 func (p *picker) filter() {
 	terms := strings.Fields(strings.ToLower(p.input.Value()))
 	p.shown = p.shown[:0]
+	if p.resolved() == pathOK {
+		p.shown = append(p.shown, p.path)
+	}
 	for _, f := range p.folders {
+		if p.resolved() == pathOK && f == p.path {
+			continue
+		}
 		hay := strings.ToLower(f)
 		match := true
 		for _, t := range terms {
@@ -76,6 +99,36 @@ func (p *picker) filter() {
 		}
 	}
 	p.cursor = min(p.cursor, max(len(p.shown)-1, 0))
+	if p.ghost != "" && p.ghostOf == p.input.Value() {
+		p.input.SetSuggestions([]string{p.ghost})
+	} else {
+		p.input.SetSuggestions(p.recentGhost())
+	}
+}
+
+func (p *picker) recentGhost() []string {
+	v := p.input.Value()
+	if v == "" {
+		return nil
+	}
+	home, _ := os.UserHomeDir()
+	for _, f := range p.folders {
+		cands := []string{f}
+		if home != "" && (f == home || strings.HasPrefix(f, home+"/")) {
+			cands = append(cands, "~"+f[len(home):])
+		}
+		for _, c := range cands {
+			if len(c) <= len(v) || !strings.EqualFold(c[:len(v)], v) {
+				continue
+			}
+			rest := c[len(v):]
+			if i := strings.Index(rest, "/"); i >= 0 {
+				rest = rest[:i+1]
+			}
+			return []string{v + rest}
+		}
+	}
+	return nil
 }
 
 func (m *model) pickerKey(msg tea.KeyPressMsg) tea.Cmd {
@@ -85,7 +138,7 @@ func (m *model) pickerKey(msg tea.KeyPressMsg) tea.Cmd {
 		m.picker = nil
 		return m.zoom(false)
 	case "enter":
-		if len(p.shown) == 0 {
+		if len(p.shown) == 0 || p.resolved() == pathMissing || (pathLike(p.input.Value()) && p.checked != p.input.Value()) {
 			return nil
 		}
 		m.picker = nil
@@ -100,7 +153,7 @@ func (m *model) pickerKey(msg tea.KeyPressMsg) tea.Cmd {
 	var cmd tea.Cmd
 	p.input, cmd = p.input.Update(msg)
 	p.filter()
-	return cmd
+	return tea.Batch(cmd, inspect(p.input.Value()), ghost(p.input.Value()))
 }
 
 func (p *picker) view(w, h int, focused bool) string {
@@ -113,12 +166,23 @@ func (p *picker) view(w, h int, focused bool) string {
 		if home != "" && (f == home || strings.HasPrefix(f, home+"/")) {
 			f = "~" + f[len(home):]
 		}
-		body = append(body, ansi.Truncate(selectionBar(i == p.cursor, focused)+f, w, "…"))
+		bar := selectionBar(i == p.cursor, focused)
+		if i == 0 && p.resolved() == pathOK {
+			bar += "Start in "
+			if avail := w - ansi.StringWidth(bar); ansi.StringWidth(f) > avail {
+				f = ansi.TruncateLeft(f, ansi.StringWidth(f)-max(avail, 1)+1, "…")
+			}
+		}
+		body = append(body, ansi.Truncate(bar+f, w, "…"))
 	}
-	if len(p.shown) == 0 {
+	switch {
+	case p.resolved() == pathMissing:
+		body = append(body, gray.Render("no such folder"))
+	case len(p.shown) == 0:
 		body = append(body, gray.Render("No folders match."))
 	}
-	return page(body, gray.Render(ansi.Truncate("↑↓ move  enter start  esc cancel", w, "")), h)
+	hint := gray.Render("↑↓ move  tab accept") + "\n" + gray.Render("enter start  esc cancel")
+	return page(body, hint, h)
 }
 
 type renameDialog struct {
