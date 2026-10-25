@@ -282,9 +282,6 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.picker != nil {
 			m.picker.input.SetWidth(max(m.width-4, 1))
 		}
-		if m.rename != nil {
-			m.rename.input.SetWidth(max(m.width-4, 1))
-		}
 		m.search.SetWidth(max(m.width-2, 1))
 	case tea.FocusMsg:
 		m.focused = true
@@ -433,7 +430,7 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 		for _, s := range m.shown() {
 			order = append(order, s.SessionID)
 		}
-		m.rename = newRenameDialog(r, msg.String() == "s", m.width, order)
+		m.rename = newRenameDialog(r, msg.String() == "s", order)
 		return m.rename.input.Focus()
 	case "t":
 		r, ok := m.current()
@@ -622,6 +619,11 @@ func (m *model) confirmRename(d *renameDialog) tea.Cmd {
 		m.rebuild()
 		return tea.Batch(m.saveState(), m.refreshPreview())
 	}
+	i := slices.IndexFunc(m.shown(), func(r deck.Row) bool { return r.SessionID == d.id })
+	if i < 0 || m.shown()[i].Kind != deck.Live || m.shown()[i].PaneID != d.pane {
+		return m.saveState()
+	}
+	d.busy = m.shown()[i].Busy
 	var entry store.ActiveEntry
 	for _, e := range m.state.Active {
 		if e.SessionID == d.id {
@@ -1111,8 +1113,15 @@ func (m *model) rebuild() (moved bool) {
 		keepOrder(m.suspended, d.order)
 	}
 	m.syncCursor()
-	if m.rename != nil && !slices.ContainsFunc(m.shown(), func(r deck.Row) bool { return r.SessionID == m.rename.id }) {
-		m.rename = nil
+	if d := m.rename; d != nil {
+		i := slices.IndexFunc(m.shown(), func(r deck.Row) bool { return r.SessionID == d.id })
+		if i < 0 {
+			m.rename = nil
+		} else if r := m.shown()[i]; r.Kind != d.kind || r.PaneID != d.pane {
+			m.rename = nil
+		} else {
+			d.busy = r.Busy
+		}
 	}
 	return m.selected != before
 }

@@ -112,7 +112,7 @@ func (m *model) layout(w, h int) (blocks [][]string, hint string, room int) {
 		default:
 			blocks = append(blocks, rowLines(r, w, i == m.cursor, m.focused, m.prState))
 		}
-		if i == m.cursor && m.rename != nil {
+		if m.rename != nil && r.SessionID == m.rename.id {
 			last := blocks[len(blocks)-1]
 			idx := 0
 			if len(last) > 0 && ansi.Strip(last[0]) == "Elsewhere" {

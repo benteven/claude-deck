@@ -196,14 +196,14 @@ type renameDialog struct {
 	busy     bool
 	fresh    bool
 	order    []string
+	kind     deck.Kind
 }
 
-func newRenameDialog(r deck.Row, suspend bool, width int, order []string) *renameDialog {
-	d := &renameDialog{input: textinput.New(), id: r.SessionID, pane: r.PaneID, name: r.Name, suspend: suspend, busy: r.Busy, fresh: true, order: order}
+func newRenameDialog(r deck.Row, suspend bool, order []string) *renameDialog {
+	d := &renameDialog{input: textinput.New(), id: r.SessionID, pane: r.PaneID, name: r.Name, suspend: suspend, busy: r.Busy, fresh: true, order: order, kind: r.Kind}
 	d.input.Prompt = ""
 	d.input.SetValue(r.Name)
 	d.input.CursorEnd()
-	d.input.SetWidth(max(width-3, 1))
 	return d
 }
 
@@ -228,6 +228,7 @@ func (m *model) renameKey(msg tea.KeyPressMsg) tea.Cmd {
 
 func (d *renameDialog) line(w int, focused bool) string {
 	bar := selectionBar(true, focused)
+	d.input.SetWidth(max(w-3, 1))
 	if d.fresh {
 		return ansi.Truncate(bar+reverse.Render(ansi.Truncate(d.name, max(w-2, 1), "…")), w, "")
 	}
