@@ -145,6 +145,7 @@ type model struct {
 	prSem chan struct{}
 
 	ending   map[string]bool
+	followed map[string]string
 	picker   *picker
 	rename   *renameDialog
 	takeover *takeoverDialog
@@ -893,7 +894,54 @@ func runningAgents(ids []string, evs map[string]events.State, sessions []live.Se
 	return agents
 }
 
+func (m *model) followClear(msg refreshMsg) tea.Cmd {
+	var cmds []tea.Cmd
+	for i, p := range msg.panes {
+		if want, ok := m.followed[p.ID]; ok {
+			if p.SessionID == want || p.Dead {
+				delete(m.followed, p.ID)
+			} else {
+				msg.panes[i].SessionID = want
+			}
+			continue
+		}
+		if p.Dead || p.SessionID == "" || p.PID <= 0 {
+			continue
+		}
+		j := slices.IndexFunc(msg.live, func(l live.Session) bool { return l.PID == p.PID && l.SessionID != p.SessionID })
+		k := slices.IndexFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == p.SessionID })
+		if j < 0 || k < 0 || slices.ContainsFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == msg.live[j].SessionID }) {
+			continue
+		}
+		old, next := p.SessionID, msg.live[j]
+		entry := &m.state.Active[k]
+		entry.SessionID, entry.Name = next.SessionID, ""
+		if next.Cwd != "" {
+			entry.Cwd = next.Cwd
+		}
+		if m.selected == old {
+			m.selected = next.SessionID
+		}
+		if m.prevSelected == old {
+			m.prevSelected = next.SessionID
+		}
+		if m.followed == nil {
+			m.followed = map[string]string{}
+		}
+		m.followed[p.ID] = next.SessionID
+		msg.panes[i].SessionID = next.SessionID
+		delete(msg.events, old)
+		eventsDir := filepath.Join(m.home, "events")
+		cmds = append(cmds, m.tmux("set-option", "-p", "-t", p.ID, "@deck-session", next.SessionID), m.saveState(), func() tea.Msg {
+			events.Remove(eventsDir, old)
+			return nil
+		})
+	}
+	return tea.Batch(cmds...)
+}
+
 func (m *model) apply(msg refreshMsg) tea.Cmd {
+	followed := m.followClear(msg)
 	m.in.Panes = map[string]string{}
 	slotPane := ""
 	for _, p := range msg.panes {
@@ -924,7 +972,7 @@ func (m *model) apply(msg refreshMsg) tea.Cmd {
 	m.folders = msg.folders
 
 	var cmds []tea.Cmd
-	cmds = append(cmds, m.endDead(msg.panes, slotPane))
+	cmds = append(cmds, followed, m.endDead(msg.panes, slotPane))
 	if m.rebuild() && m.loaded {
 		cmds = append(cmds, m.showSelected())
 	}
