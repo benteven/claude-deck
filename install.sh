@@ -2,7 +2,6 @@
 set -eu
 
 main() {
-
 	repo="benteven/claude-deck"
 	bin_dir="${CLAUDE_DECK_BIN_DIR:-$HOME/.local/bin}"
 	base_url="${CLAUDE_DECK_BASE_URL:-}"
