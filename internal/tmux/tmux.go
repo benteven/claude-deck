@@ -27,7 +27,6 @@ type Client struct {
 type Pane struct {
 	ID, SessionID, Role, Target string
 	PID                         int
-	StartTime                   int64
 	Dead                        bool
 }
 
@@ -44,7 +43,7 @@ func (c Client) Run(args ...string) (string, error) {
 func (c Client) Panes() ([]Pane, error) {
 	format := strings.Join([]string{
 		"#{pane_id}", "#{@deck-session}", "#{@deck-role}",
-		"#{session_name}:#{window_name}.#{pane_index}", "#{pane_pid}", "#{pane_dead}", "#{pane_start_time}",
+		"#{session_name}:#{window_name}.#{pane_index}", "#{pane_pid}", "#{pane_dead}",
 	}, "\t")
 	out, err := c.Run("list-panes", "-a", "-F", format)
 	if err != nil {
@@ -53,12 +52,11 @@ func (c Client) Panes() ([]Pane, error) {
 	var panes []Pane
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Split(line, "\t")
-		if len(f) != 7 {
+		if len(f) != 6 {
 			continue
 		}
 		pid, _ := strconv.Atoi(f[4])
-		started, _ := strconv.ParseInt(f[6], 10, 64)
-		panes = append(panes, Pane{ID: f[0], SessionID: f[1], Role: f[2], Target: f[3], PID: pid, Dead: f[5] == "1", StartTime: started})
+		panes = append(panes, Pane{ID: f[0], SessionID: f[1], Role: f[2], Target: f[3], PID: pid, Dead: f[5] == "1"})
 	}
 	return panes, nil
 }

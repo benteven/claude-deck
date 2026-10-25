@@ -143,26 +143,34 @@ func (o Ops) StopOutside(pid int, startedAt time.Time, timeout time.Duration) er
 	return fmt.Errorf("session still running after %s, not taken over", timeout)
 }
 
-func confirmClaude(pid int, startedAt time.Time) error {
-	if startedAt.IsZero() {
-		return fmt.Errorf("process %d has no start time, not taken over", pid)
-	}
+func ProcessStart(pid int) (start time.Time, comm string, err error) {
 	cmd := exec.Command("ps", "-o", "lstart=,comm=", "-p", strconv.Itoa(pid))
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	out, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("process %d not found, not taken over", pid)
+		return time.Time{}, "", fmt.Errorf("process %d not found", pid)
 	}
 	f := strings.Fields(string(out))
 	if len(f) < 6 {
-		return fmt.Errorf("process %d: unexpected ps output %q", pid, out)
+		return time.Time{}, "", fmt.Errorf("process %d: unexpected ps output %q", pid, out)
 	}
-	if !strings.Contains(filepath.Base(strings.Join(f[5:], " ")), "claude") {
-		return fmt.Errorf("process %d is not claude, not taken over", pid)
-	}
-	start, err := time.ParseInLocation("Mon Jan 2 15:04:05 2006", strings.Join(f[:5], " "), time.Local)
+	start, err = time.ParseInLocation("Mon Jan 2 15:04:05 2006", strings.Join(f[:5], " "), time.Local)
 	if err != nil {
-		return fmt.Errorf("process %d: %w", pid, err)
+		return time.Time{}, "", fmt.Errorf("process %d: %w", pid, err)
+	}
+	return start, strings.Join(f[5:], " "), nil
+}
+
+func confirmClaude(pid int, startedAt time.Time) error {
+	if startedAt.IsZero() {
+		return fmt.Errorf("process %d has no start time, not taken over", pid)
+	}
+	start, comm, err := ProcessStart(pid)
+	if err != nil {
+		return fmt.Errorf("%w, not taken over", err)
+	}
+	if !strings.Contains(filepath.Base(comm), "claude") {
+		return fmt.Errorf("process %d is not claude, not taken over", pid)
 	}
 	if start.After(startedAt) {
 		return fmt.Errorf("process %d started after the session, not taken over", pid)

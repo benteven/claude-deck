@@ -51,7 +51,27 @@ type prStateMsg struct {
 	err        error
 }
 
+type pidStarts struct {
+	mu sync.Mutex
+	at map[int]time.Time
+}
+
+func (s *pidStarts) get(pid int) time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if t, ok := s.at[pid]; ok {
+		return t
+	}
+	t, _, err := deck.ProcessStart(pid)
+	if err != nil {
+		return time.Time{}
+	}
+	s.at[pid] = t
+	return t
+}
+
 type refreshMsg struct {
+	starts    map[int]time.Time
 	panes     []tmux.Pane
 	live      []live.Session
 	events    map[string]events.State
@@ -146,6 +166,7 @@ type model struct {
 
 	ending   map[string]bool
 	followed map[string]string
+	starts   *pidStarts
 	picker   *picker
 	rename   *renameDialog
 	takeover *takeoverDialog
@@ -189,6 +210,7 @@ func Run() error {
 		state:      state,
 		want:       &slotWant{},
 		saver:      &stateSaver{},
+		starts:     &pidStarts{at: map[int]time.Time{}},
 		focused:    true,
 		prs:        map[string]*prEntry{},
 		prSem:      make(chan struct{}, prParallel),
@@ -834,7 +856,7 @@ func (m *model) refresh() tea.Cmd {
 	if save {
 		m.savedAt = now
 	}
-	t, reader, home, claudeHome := m.ops.T, m.reader, m.home, m.claudeHome
+	t, reader, home, claudeHome, starts := m.ops.T, m.reader, m.home, m.claudeHome, m.starts
 	return func() tea.Msg {
 		panes, err := t.Panes()
 		if err != nil {
@@ -842,6 +864,12 @@ func (m *model) refresh() tea.Cmd {
 		}
 		msg := refreshMsg{panes: panes, files: files, folders: folders, events: map[string]events.State{}, summaries: map[string]transcript.Summary{}}
 		msg.live, _ = live.Running(claudeHome)
+		msg.starts = map[int]time.Time{}
+		for _, p := range panes {
+			if !p.Dead && p.SessionID != "" && p.PID > 0 {
+				msg.starts[p.PID] = starts.get(p.PID)
+			}
+		}
 		for _, id := range ids {
 			if ev, err := events.Read(filepath.Join(home, "events"), id); err == nil {
 				msg.events[id] = ev
@@ -924,11 +952,10 @@ func (m *model) followClear(msg refreshMsg) tea.Cmd {
 			}
 		}
 		k := slices.IndexFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == p.SessionID })
-		if next.SessionID == "" || next.SessionID == p.SessionID || k < 0 || !startedAfter(next.StartedAt, p.StartTime) {
+		if next.SessionID == "" || next.SessionID == p.SessionID || k < 0 || !startedAfter(next.StartedAt, msg.starts[p.PID]) {
 			continue
 		}
-		if slices.ContainsFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == next.SessionID }) ||
-			slices.ContainsFunc(msg.files, func(f transcript.File) bool { return f.SessionID == next.SessionID }) {
+		if slices.ContainsFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == next.SessionID }) {
 			continue
 		}
 		old := p.SessionID
@@ -968,11 +995,14 @@ func (m *model) followClear(msg refreshMsg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func startedAfter(startedAt, paneStart int64) bool {
+func startedAfter(startedAt int64, procStart time.Time) bool {
+	if procStart.IsZero() {
+		return false
+	}
 	if startedAt < 1e11 {
 		startedAt *= 1000
 	}
-	return startedAt >= paneStart*1000
+	return startedAt >= procStart.UnixMilli()-2000
 }
 
 func (m *model) apply(msg refreshMsg) tea.Cmd {
