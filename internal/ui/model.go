@@ -51,7 +51,42 @@ type prStateMsg struct {
 	err        error
 }
 
+type paneProc struct {
+	pane string
+	pid  int
+}
+
+type pidStarts struct {
+	mu sync.Mutex
+	at map[paneProc]time.Time
+}
+
+func (s *pidStarts) get(k paneProc) time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if t, ok := s.at[k]; ok {
+		return t
+	}
+	t, _, err := deck.ProcessStart(k.pid)
+	if err != nil {
+		return time.Time{}
+	}
+	s.at[k] = t
+	return t
+}
+
+func (s *pidStarts) keep(keys map[paneProc]bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k := range s.at {
+		if !keys[k] {
+			delete(s.at, k)
+		}
+	}
+}
+
 type refreshMsg struct {
+	starts    map[int]time.Time
 	panes     []tmux.Pane
 	live      []live.Session
 	events    map[string]events.State
@@ -145,6 +180,8 @@ type model struct {
 	prSem chan struct{}
 
 	ending   map[string]bool
+	followed map[string]string
+	starts   *pidStarts
 	picker   *picker
 	rename   *renameDialog
 	takeover *takeoverDialog
@@ -188,6 +225,7 @@ func Run() error {
 		state:      state,
 		want:       &slotWant{},
 		saver:      &stateSaver{},
+		starts:     &pidStarts{at: map[paneProc]time.Time{}},
 		focused:    true,
 		prs:        map[string]*prEntry{},
 		prSem:      make(chan struct{}, prParallel),
@@ -849,7 +887,7 @@ func (m *model) refresh() tea.Cmd {
 	if save {
 		m.savedAt = now
 	}
-	t, reader, home, claudeHome := m.ops.T, m.reader, m.home, m.claudeHome
+	t, reader, home, claudeHome, starts := m.ops.T, m.reader, m.home, m.claudeHome, m.starts
 	return func() tea.Msg {
 		panes, err := t.Panes()
 		if err != nil {
@@ -857,6 +895,16 @@ func (m *model) refresh() tea.Cmd {
 		}
 		msg := refreshMsg{panes: panes, files: files, folders: folders, events: map[string]events.State{}, summaries: map[string]transcript.Summary{}}
 		msg.live, _ = live.Running(claudeHome)
+		msg.starts = map[int]time.Time{}
+		keys := map[paneProc]bool{}
+		for _, p := range panes {
+			if !p.Dead && p.SessionID != "" && p.PID > 0 {
+				k := paneProc{p.ID, p.PID}
+				keys[k] = true
+				msg.starts[p.PID] = starts.get(k)
+			}
+		}
+		starts.keep(keys)
 		for _, id := range ids {
 			if ev, err := events.Read(filepath.Join(home, "events"), id); err == nil {
 				msg.events[id] = ev
@@ -909,7 +957,91 @@ func runningAgents(ids []string, evs map[string]events.State, sessions []live.Se
 	return agents
 }
 
+func (m *model) followClear(msg refreshMsg) tea.Cmd {
+	var cmds []tea.Cmd
+	present := map[string]bool{}
+	for _, p := range msg.panes {
+		present[p.ID] = true
+	}
+	for id := range m.followed {
+		if !present[id] {
+			delete(m.followed, id)
+		}
+	}
+	for i, p := range msg.panes {
+		if want, ok := m.followed[p.ID]; ok {
+			if p.SessionID == want || p.Dead {
+				delete(m.followed, p.ID)
+			} else {
+				msg.panes[i].SessionID = want
+			}
+			continue
+		}
+		if p.Dead || p.SessionID == "" || p.PID <= 0 {
+			continue
+		}
+		var next live.Session
+		for _, l := range msg.live {
+			if l.PID == p.PID && !m.ending[l.SessionID] && l.StartedAt >= next.StartedAt {
+				next = l
+			}
+		}
+		k := slices.IndexFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == p.SessionID })
+		if next.SessionID == "" || next.SessionID == p.SessionID || k < 0 || !startedAfter(next.StartedAt, msg.starts[p.PID]) {
+			continue
+		}
+		if slices.ContainsFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == next.SessionID }) {
+			continue
+		}
+		old := p.SessionID
+		entry := &m.state.Active[k]
+		entry.SessionID, entry.Name = next.SessionID, ""
+		if next.Cwd != "" {
+			entry.Cwd = next.Cwd
+		}
+		if m.selected == old {
+			m.selected = next.SessionID
+		}
+		if m.prevSelected == old {
+			m.prevSelected = next.SessionID
+		}
+		if m.followed == nil {
+			m.followed = map[string]string{}
+		}
+		m.followed[p.ID] = next.SessionID
+		m.markEnding(old)
+		msg.panes[i].SessionID = next.SessionID
+		delete(msg.events, old)
+		if m.rename != nil && m.rename.pane == p.ID {
+			m.rename = nil
+		}
+		if m.restart != nil && m.restart.row.PaneID == p.ID {
+			m.restart = nil
+		}
+		if !m.dialogOpen() {
+			cmds = append(cmds, m.zoom(false))
+		}
+		eventsDir := filepath.Join(m.home, "events")
+		cmds = append(cmds, m.tmux("set-option", "-p", "-t", p.ID, "@deck-session", next.SessionID), m.saveState(), func() tea.Msg {
+			events.Remove(eventsDir, old)
+			return nil
+		})
+	}
+	return tea.Batch(cmds...)
+}
+
+func startedAfter(startedAt int64, procStart time.Time) bool {
+	if procStart.IsZero() {
+		return false
+	}
+	if startedAt < 1e11 {
+		startedAt *= 1000
+	}
+	return startedAt >= procStart.UnixMilli()-2000
+}
+
 func (m *model) apply(msg refreshMsg) tea.Cmd {
+	followed := m.followClear(msg)
 	m.in.Panes = map[string]string{}
 	slotPane := ""
 	for _, p := range msg.panes {
@@ -940,7 +1072,7 @@ func (m *model) apply(msg refreshMsg) tea.Cmd {
 	m.folders = msg.folders
 
 	var cmds []tea.Cmd
-	cmds = append(cmds, m.endDead(msg.panes, slotPane))
+	cmds = append(cmds, followed, m.endDead(msg.panes, slotPane))
 	if m.rebuild() && m.loaded {
 		cmds = append(cmds, m.showSelected())
 	}
