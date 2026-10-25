@@ -194,7 +194,11 @@ func Trash(paths ...string) error {
 		}
 		args = append(args, abs)
 	}
-	out, err := exec.Command("/usr/bin/trash", args...).CombinedOutput()
+	cmd, err := trashCommand(args)
+	if err != nil {
+		return err
+	}
+	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return nil
 	}

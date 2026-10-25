@@ -506,7 +506,7 @@ func (m *model) openPRs(r deck.Row) tea.Cmd {
 func openURLs(urls []string) tea.Cmd {
 	opener := os.Getenv("CLAUDE_DECK_OPEN")
 	if opener == "" {
-		opener = "open"
+		opener = defaultOpener()
 	}
 	return func() tea.Msg {
 		for _, u := range urls {
