@@ -56,7 +56,7 @@ From anywhere:
 | --- | --- |
 | `ctrl-b` | Focus the list |
 | `ctrl-j` / `ctrl-k` | Next or previous session |
-| `ctrl-1` ... `ctrl-9` | Go to session 1 to 9 (needs a terminal that sends these, such as Ghostty) |
+| `ctrl-b 1` ... `ctrl-b 9` | Go to session 1 to 9 |
 | `ctrl-b ctrl-b`, `ctrl-b ctrl-j`, `ctrl-b ctrl-k` | Send that key to Claude Code |
 
 In the list:

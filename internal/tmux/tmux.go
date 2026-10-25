@@ -18,20 +18,7 @@ const (
 	ListWidth   = 36
 	NextKey     = "\ue000"
 	PrevKey     = "\ue001"
-	numberBase  = 0xe001
 )
-
-func NumberKey(n int) string {
-	return string(rune(numberBase + n))
-}
-
-func Number(text string) int {
-	r := []rune(text)
-	if len(r) != 1 || r[0] <= numberBase || r[0] > numberBase+9 {
-		return 0
-	}
-	return int(r[0] - numberBase)
-}
 
 type Client struct {
 	Socket, Conf string
@@ -146,9 +133,8 @@ func switchKey(key, code string) string {
 	return fmt.Sprintf(`bind -n %s if -F "%s" "if -F '#{@deck-dialog}' 'send-keys -t =deck:main.0 %s' 'send-keys -t =deck:main.1 %s ; select-pane -t =deck:main.1'" "send-keys -t =deck:main.0 -l %s"`, key, listFocused, key, key, code)
 }
 
-func numberBinding(n int) string {
-	key := fmt.Sprintf("C-%d", n)
-	return fmt.Sprintf(`bind -n %s if -F "#{&&:%s,#{@deck-dialog}}" "send-keys -t =deck:main.0 %s" "send-keys -t =deck:main.0 -l %s"`, key, listFocused, key, NumberKey(n))
+func slotKey(key string) string {
+	return fmt.Sprintf(`bind -T deck %s send-keys -t =deck:main.1 %s \; select-pane -t =deck:main.1`, key, key)
 }
 
 func WriteConf(path string, cfg store.Config) error {
@@ -156,12 +142,13 @@ func WriteConf(path string, cfg store.Config) error {
 	lines := []string{
 		"set -g prefix None",
 		"unbind -q -a",
-		fmt.Sprintf(`bind -n %s if -F "%s" "send-keys -t =deck:main.1 %s ; select-pane -t =deck:main.1" "select-pane -t =deck:main.0"`, p, listFocused, p),
+		fmt.Sprintf(`bind -n %s select-pane -t =deck:main.0 \; switch-client -T deck`, p),
+		"bind -T deck Any send-keys -t =deck:main.0",
+		slotKey("C-j"),
+		slotKey("C-k"),
+		slotKey(p),
 		switchKey("C-j", NextKey),
 		switchKey("C-k", PrevKey),
-	}
-	for n := 1; n <= 9; n++ {
-		lines = append(lines, numberBinding(n))
 	}
 	lines = append(lines,
 		"set -g mouse on",

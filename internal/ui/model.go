@@ -295,9 +295,6 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Text == tmux.NextKey || msg.Text == tmux.PrevKey {
 			return m, m.switchLive(msg.Text == tmux.NextKey)
 		}
-		if n := tmux.Number(msg.Text); n > 0 {
-			return m, m.jump(n)
-		}
 		m.hint = ""
 		m.err = nil
 		if m.quitting {
