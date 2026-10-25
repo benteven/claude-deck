@@ -1,0 +1,480 @@
+package ui
+
+import (
+	"fmt"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/benteven/claude-deck/internal/deck"
+	"github.com/benteven/claude-deck/internal/textclean"
+	"github.com/benteven/claude-deck/internal/tmux"
+	"github.com/benteven/claude-deck/internal/transcript"
+)
+
+const (
+	barCells   = 12
+	agentLimit = 3
+)
+
+var (
+	white  = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))
+	gray   = lipgloss.NewStyle().Foreground(lipgloss.Color("#7c8291"))
+	dim    = lipgloss.NewStyle().Foreground(lipgloss.Color("#3a3f4b"))
+	orange = lipgloss.NewStyle().Foreground(lipgloss.Color("#d97757"))
+	yellow = lipgloss.NewStyle().Foreground(lipgloss.Color("#e5b85c"))
+	green  = lipgloss.NewStyle().Foreground(lipgloss.Color("#8cc97a"))
+	red    = lipgloss.NewStyle().Foreground(lipgloss.Color("#e06c75"))
+	blue   = lipgloss.NewStyle().Foreground(lipgloss.Color("#7fb3ff"))
+	purple = lipgloss.NewStyle().Foreground(lipgloss.Color("#b39ddb"))
+	rule   = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+
+	numColors = []string{"#ff6b6b", "#ffa94d", "#ffd43b", "#69db7c", "#38d9a9", "#4dabf7", "#9775fa", "#f783ac", "#e9ecef"}
+)
+
+func numLabel(n int) string {
+	if n < 1 || n > len(numColors) {
+		return ""
+	}
+	return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(numColors[n-1])).Render(strconv.Itoa(n))
+}
+
+func nameLine(name string, style lipgloss.Style, mark string, num, inner int) string {
+	tag := numLabel(num)
+	reserved := lipgloss.Width(mark)
+	if tag != "" {
+		reserved += lipgloss.Width(tag) + 1
+	}
+	left := style.Render(ansi.Truncate(name, max(inner-reserved, 1), "…")) + mark
+	if tag == "" {
+		return left
+	}
+	pad := max(inner-lipgloss.Width(left)-lipgloss.Width(tag), 1)
+	return left + strings.Repeat(" ", pad) + tag
+}
+
+func (m *model) View() tea.View {
+	w, h := m.size()
+	var content string
+	switch {
+	case m.picker != nil:
+		content = m.picker.view(w, h, m.focused)
+	case m.rename != nil:
+		content = m.rename.view(w, h)
+	case m.prompt != nil:
+		content = m.prompt.view(w, h)
+	case m.takeover != nil:
+		content = m.takeover.view(w, h)
+	case m.quit != nil:
+		content = m.quit.view(w, h)
+	case m.del != nil:
+		content = m.del.view(w, h)
+	case m.restart != nil:
+		content = m.restart.view(w, h)
+	default:
+		content = m.listView(w, h)
+	}
+	v := tea.NewView(content)
+	v.AltScreen = true
+	v.ReportFocus = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
+}
+
+func (m *model) listView(w, h int) string {
+	blocks, hint, room := m.layout(w, h)
+	head := []string{m.tabsLine(w)}
+	if m.searching || m.query != "" {
+		head = append(head, m.searchLine(w))
+	}
+	var body []string
+	if len(blocks) == 0 {
+		body = []string{gray.Render(ansi.Truncate(m.emptyText(), w, ""))}
+	} else {
+		body = window(blocks, m.cursor, room, w)
+	}
+	return page(append(head, body...), hint, h)
+}
+
+func (m *model) layout(w, h int) (blocks [][]string, hint string, room int) {
+	now := time.Now()
+	header := false
+	for i, r := range m.shown() {
+		switch {
+		case m.mode == modeSuspended:
+			blocks = append(blocks, suspendedLines(r, w, now, i == m.cursor, m.focused, m.prState))
+		case r.Kind == deck.Elsewhere && !header:
+			header = true
+			blocks = append(blocks, append([]string{gray.Render("Elsewhere")}, rowLines(r, w, i == m.cursor, m.focused, m.prState)...))
+		default:
+			blocks = append(blocks, rowLines(r, w, i == m.cursor, m.focused, m.prState))
+		}
+	}
+	hint = m.hintLine(w)
+	room = h - 2 - strings.Count(hint, "\n")
+	if m.searching || m.query != "" {
+		room--
+	}
+	return blocks, hint, room
+}
+
+func (m *model) size() (int, int) {
+	if m.width < 1 || m.height < 1 {
+		return tmux.ListWidth, 24
+	}
+	return m.width, m.height
+}
+
+func (m *model) visibleRows() []deck.Row {
+	w, h := m.size()
+	blocks, _, room := m.layout(w, h)
+	rows := m.shown()
+	start := windowStart(blocks, m.cursor, room)
+	end := start
+	used := 0
+	for end < len(blocks) {
+		used += len(blocks[end])
+		if end > start {
+			used++
+		}
+		if used > room {
+			break
+		}
+		end++
+	}
+	return rows[start:max(end, min(start+1, len(rows)))]
+}
+
+func (m *model) emptyText() string {
+	switch {
+	case m.query != "":
+		return "No matches."
+	case m.mode == modeSuspended:
+		return "No suspended sessions."
+	}
+	return "No sessions. n starts one."
+}
+
+func (m *model) searchLine(w int) string {
+	if m.searching {
+		return ansi.Truncate(m.search.View(), w, "")
+	}
+	return ansi.Truncate(yellow.Render("/")+m.query, w, "…")
+}
+
+func suspendedLines(r deck.Row, w int, now time.Time, selected, focused bool, prState func(string) string) []string {
+	bar := selectionBar(selected, focused)
+	inner := max(w-2, 1)
+	meta := []string{gray.Render(ago(now, r.LastInteraction))}
+	if r.Cwd != "" {
+		meta = append(meta, gray.Render(textclean.Clean(filepath.Base(r.Cwd))))
+	}
+	for _, pr := range visiblePRs(r.Summary.PRs, prState) {
+		meta = append(meta, prText(pr, prState(pr.URL), true))
+	}
+	lines := []string{
+		white.Render(ansi.Truncate(r.Name, inner, "…")),
+		fitItems(meta, inner),
+	}
+	for i, l := range lines {
+		lines[i] = ansi.Truncate(bar+l, w, "")
+	}
+	return lines
+}
+
+func ago(now, t time.Time) string {
+	d := now.Sub(t)
+	switch {
+	case d < time.Minute:
+		return "now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d/time.Minute))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d/time.Hour))
+	case d < 7*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d/(24*time.Hour)))
+	}
+	return fmt.Sprintf("%dw ago", int(d/(7*24*time.Hour)))
+}
+
+func windowStart(blocks [][]string, cursor, room int) int {
+	height := func(from, to int) int {
+		n := 0
+		for i := from; i <= to; i++ {
+			n += len(blocks[i]) + 1
+		}
+		return n - 1
+	}
+	start := 0
+	for start < cursor && height(start, cursor) > room {
+		start++
+	}
+	return start
+}
+
+func window(blocks [][]string, cursor, room, w int) []string {
+	start := windowStart(blocks, cursor, room)
+	sep := rule.Render(strings.Repeat("─", w))
+	var out []string
+	for i := start; i < len(blocks); i++ {
+		if i > start {
+			out = append(out, sep)
+		}
+		out = append(out, blocks[i]...)
+	}
+	return out
+}
+
+func page(body []string, hint string, h int) string {
+	room := max(h-1-strings.Count(hint, "\n"), 0)
+	if len(body) > room {
+		body = body[:room]
+	}
+	for len(body) < room {
+		body = append(body, "")
+	}
+	return strings.Join(append(body, hint), "\n")
+}
+
+func selectionBar(selected, focused bool) string {
+	switch {
+	case !selected:
+		return "  "
+	case focused:
+		return orange.Render("▌") + " "
+	default:
+		return gray.Render("▌") + " "
+	}
+}
+
+func rowLines(r deck.Row, w int, selected, focused bool, prState func(string) string) []string {
+	if r.Kind == deck.Stale {
+		return staleLines(r, w, selected, focused, prState)
+	}
+	bar := selectionBar(selected, focused)
+	inner := max(w-2, 1)
+
+	mark := ""
+	switch {
+	case r.Kind == deck.Live && r.Waiting:
+		mark = " " + yellow.Render("● waiting")
+	case r.Kind == deck.Elsewhere:
+		mark = " " + gray.Render("elsewhere")
+	}
+	lines := []string{nameLine(r.Name, white, mark, r.Num, inner), contextLine(r.Summary.ContextPercent())}
+
+	var extra []string
+	for _, pr := range visiblePRs(r.Summary.PRs, prState) {
+		extra = append(extra, prText(pr, prState(pr.URL), true))
+	}
+	if n := len(r.Summary.Artifacts); n > 0 {
+		extra = append(extra, purple.Render(fmt.Sprintf("Artifacts: %d", n)))
+	}
+	if len(extra) > 0 {
+		lines = append(lines, fitItems(extra, inner))
+	}
+	lines = append(lines, agentLines(r.Agents, inner, true)...)
+
+	for i, l := range lines {
+		lines[i] = ansi.Truncate(bar+l, w, "")
+	}
+	return lines
+}
+
+func agentLines(agents []string, width int, colored bool) []string {
+	shown := agents[:min(len(agents), agentLimit)]
+	var out []string
+	for _, a := range shown {
+		arrow, desc := "↳", ansi.Truncate(a, max(width-4, 1), "…")
+		if colored {
+			arrow, desc = gray.Render(arrow), white.Render(desc)
+		}
+		out = append(out, "  "+arrow+" "+desc)
+	}
+	if n := len(agents) - len(shown); n > 0 {
+		more := fmt.Sprintf("+%d more", n)
+		if colored {
+			more = gray.Render(more)
+		}
+		out = append(out, "  "+more)
+	}
+	return out
+}
+
+func staleLines(r deck.Row, w int, selected, focused bool, prState func(string) string) []string {
+	bar := selectionBar(selected, focused)
+	pct := r.Summary.ContextPercent()
+	filled := min(max(pct, 0), 100) * barCells / 100
+	lines := []string{
+		nameLine(r.Name, gray, "", r.Num, max(w-2, 1)),
+		strings.Repeat("━", filled) + strings.Repeat("─", barCells-filled) + fmt.Sprintf(" %d%% ctx", pct),
+	}
+	var extra []string
+	for _, pr := range visiblePRs(r.Summary.PRs, prState) {
+		extra = append(extra, prText(pr, prState(pr.URL), false))
+	}
+	if n := len(r.Summary.Artifacts); n > 0 {
+		extra = append(extra, fmt.Sprintf("Artifacts: %d", n))
+	}
+	if len(extra) > 0 {
+		lines = append(lines, fitItems(extra, max(w-2, 1)))
+	}
+	lines = append(lines, agentLines(r.Agents, max(w-2, 1), false)...)
+	for i, l := range lines {
+		if i > 0 {
+			l = gray.Render(l)
+		}
+		lines[i] = ansi.Truncate(bar+l, w, "")
+	}
+	return lines
+}
+
+func fitItems(items []string, width int) string {
+	out := items[0]
+	for _, it := range items[1:] {
+		if lipgloss.Width(out)+2+lipgloss.Width(it) > width {
+			break
+		}
+		out += "  " + it
+	}
+	return out
+}
+
+func visiblePRs(prs []transcript.PRLink, prState func(string) string) []transcript.PRLink {
+	var out []transcript.PRLink
+	for _, pr := range prs {
+		if s := prState(pr.URL); s != "merged" && s != "closed" {
+			out = append(out, pr)
+		}
+	}
+	return out
+}
+
+func linkable(url string) bool {
+	return strings.HasPrefix(url, "https://") && !strings.ContainsFunc(url, func(r rune) bool { return r <= ' ' || r == 0x7f })
+}
+
+func prIcon(state string) string {
+	switch state {
+	case "open":
+		return "●"
+	case "draft":
+		return "○"
+	}
+	return ""
+}
+
+func prText(pr transcript.PRLink, state string, colored bool) string {
+	text := fmt.Sprintf("#%d", pr.Number)
+	if colored {
+		text = blue.Render(text)
+	}
+	if linkable(pr.URL) {
+		text = ansi.SetHyperlink(pr.URL) + text + ansi.ResetHyperlink()
+	}
+	icon := prIcon(state)
+	switch {
+	case icon == "":
+		return text
+	case colored:
+		return blue.Render(icon) + " " + text
+	}
+	return icon + " " + text
+}
+
+func contextLine(pct int) string {
+	filled := min(max(pct, 0), 100) * barCells / 100
+	style := green
+	switch {
+	case pct >= 85:
+		style = red
+	case pct >= 60:
+		style = yellow
+	}
+	return style.Render(strings.Repeat("━", filled)) + dim.Render(strings.Repeat("━", barCells-filled)) + gray.Render(fmt.Sprintf(" %d%% ctx", pct))
+}
+
+func (m *model) hintLine(w int) string {
+	var text string
+	style := gray
+	switch {
+	case m.err != nil:
+		text, style = m.err.Error(), red
+	case m.hint != "":
+		text, style = m.hint, yellow
+	case m.searching:
+		text = "enter keep  esc clear"
+	case m.focused:
+		text = m.listHint(w)
+	default:
+		text = prefixLabel(m.ops.Cfg.Prefix) + ": list"
+	}
+	if m.err != nil || m.hint != "" {
+		text = strings.ReplaceAll(text, "\n", " ")
+	}
+	lines := strings.Split(text, "\n")
+	for i, l := range lines {
+		lines[i] = style.Render(ansi.Truncate(l, w, "…"))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m *model) listHint(w int) string {
+	text := "enter open  n new  s suspend  Q quit\n/ search  tab suspended  q close"
+	switch {
+	case m.mode == modeSuspended:
+		text = "enter resume  r rename  tab active\nd delete  / search  q close  Q quit"
+	case m.onElsewhere():
+		text = "t take over  n new  q close  Q quit\n/ search  tab suspended"
+	}
+	if r, ok := m.current(); ok && r.Kind == deck.Live {
+		text = addItem(text, "R restart", w)
+	}
+	if r, ok := m.current(); ok && len(visiblePRs(r.Summary.PRs, m.prState)) > 0 {
+		text = addItem(text, "o open PR", w)
+	}
+	return text
+}
+
+func addItem(text, item string, w int) string {
+	lines := strings.Split(text, "\n")
+	for i, l := range lines {
+		if lipgloss.Width(l)+2+lipgloss.Width(item) <= w {
+			lines[i] = l + "  " + item
+			return strings.Join(lines, "\n")
+		}
+	}
+	return text
+}
+
+func (m *model) onElsewhere() bool {
+	r, ok := m.current()
+	return ok && r.Kind == deck.Elsewhere
+}
+
+func prefixLabel(p string) string {
+	if rest, ok := strings.CutPrefix(p, "C-"); ok {
+		return "ctrl-" + rest
+	}
+	return p
+}
+
+func (m *model) tabLabels() (string, string) {
+	return fmt.Sprintf("Active %d", len(m.active)), fmt.Sprintf("Suspended %d", len(m.suspended))
+}
+
+func (m *model) tabsLine(w int) string {
+	a, s := m.tabLabels()
+	current := white.Underline(true)
+	if m.mode == modeSuspended {
+		a, s = white.Render(a), current.Render(s)
+	} else {
+		a, s = current.Render(a), white.Render(s)
+	}
+	return ansi.Truncate(a+"  "+s, w, "")
+}

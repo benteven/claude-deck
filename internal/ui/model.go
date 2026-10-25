@@ -1,0 +1,1126 @@
+package ui
+
+import (
+	"fmt"
+	"maps"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+	"uuid"
+
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/benteven/claude-deck/internal/deck"
+	"github.com/benteven/claude-deck/internal/events"
+	"github.com/benteven/claude-deck/internal/gh"
+	"github.com/benteven/claude-deck/internal/live"
+	"github.com/benteven/claude-deck/internal/paths"
+	"github.com/benteven/claude-deck/internal/store"
+	"github.com/benteven/claude-deck/internal/tmux"
+	"github.com/benteven/claude-deck/internal/transcript"
+)
+
+const (
+	tickEvery   = time.Second
+	listEvery   = 5 * time.Second
+	saveEvery   = 30 * time.Second
+	agentWindow = 90 * time.Second
+)
+
+type tickMsg struct{}
+
+const (
+	prTTL      = 60 * time.Second
+	prErrorTTL = 5 * time.Minute
+	prParallel = 4
+)
+
+type prEntry struct {
+	state   string
+	until   time.Time
+	pending bool
+}
+
+type prStateMsg struct {
+	url, state string
+	err        error
+}
+
+type refreshMsg struct {
+	panes     []tmux.Pane
+	live      []live.Session
+	events    map[string]events.State
+	files     []transcript.File
+	summaries map[string]transcript.Summary
+	agents    map[string][]string
+	folders   []string
+	err       error
+}
+
+const (
+	modeActive = iota
+	modeSuspended
+)
+
+type position struct {
+	cursor   int
+	selected string
+}
+
+type startedMsg struct {
+	id, cwd, name, pane string
+	err                 error
+}
+
+type errMsg struct{ err error }
+
+type quitFailedMsg struct{ err error }
+
+type takenOverMsg struct {
+	row deck.Row
+	err error
+}
+
+type stopFailedMsg struct {
+	entry store.ActiveEntry
+	err   error
+}
+
+type slotWant struct {
+	mu      sync.Mutex
+	pane    string
+	target  string
+	preview bool
+}
+
+type stateSaver struct {
+	mu    sync.Mutex
+	state store.State
+}
+
+type model struct {
+	ops        deck.Ops
+	reader     *transcript.Reader
+	home       string
+	claudeHome string
+	state      store.State
+
+	in       deck.Inputs
+	folders  []string
+	listedAt time.Time
+	savedAt  time.Time
+	loaded   bool
+
+	active    []deck.Row
+	suspended []deck.Row
+	selected  string
+	cursor    int
+
+	mode      int
+	other     position
+	query     string
+	searching bool
+	search    textinput.Model
+	resuming  map[string]bool
+	batch     map[string]bool
+	prompt    *resumePrompt
+
+	previewPane  string
+	slot         string
+	want         *slotWant
+	saver        *stateSaver
+	prevSelected string
+
+	focused       bool
+	width, height int
+	hint          string
+	err           error
+
+	prs   map[string]*prEntry
+	prSem chan struct{}
+
+	ending   map[string]bool
+	picker   *picker
+	rename   *renameDialog
+	takeover *takeoverDialog
+	quit     *quitDialog
+	del      *deleteDialog
+	restart  *restartDialog
+	gone     map[string]bool
+	quitting bool
+	inDialog bool
+}
+
+func Run() error {
+	home := paths.DeckHome()
+	cfg, err := store.LoadConfig(home)
+	if err != nil {
+		return err
+	}
+	state, err := store.Load(home)
+	if err != nil {
+		return err
+	}
+	reader := transcript.NewReader(filepath.Join(home, "summaries.json"))
+	search := textinput.New()
+	search.Prompt = "/"
+	styles := search.Styles()
+	styles.Focused.Prompt = yellow
+	styles.Blurred.Prompt = yellow
+	search.SetStyles(styles)
+	m := &model{
+		search:   search,
+		resuming: map[string]bool{},
+		batch:    map[string]bool{},
+		ops: deck.Ops{
+			T:         tmux.Client{Socket: paths.Socket(), Conf: filepath.Join(home, "tmux.conf")},
+			Cfg:       cfg,
+			HooksPath: filepath.Join(home, "hooks.json"),
+		},
+		reader:     reader,
+		home:       home,
+		claudeHome: paths.ClaudeHome(),
+		state:      state,
+		want:       &slotWant{},
+		saver:      &stateSaver{},
+		focused:    true,
+		prs:        map[string]*prEntry{},
+		prSem:      make(chan struct{}, prParallel),
+	}
+	_, err = tea.NewProgram(m).Run()
+	if serr := reader.Save(); err == nil {
+		err = serr
+	}
+	return err
+}
+
+func (m *model) Init() tea.Cmd {
+	return tea.Batch(m.refresh(), m.dialogFlag())
+}
+
+func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	_, cmd := m.update(msg)
+	if open := m.dialogOpen() || m.searching; open != m.inDialog {
+		m.inDialog = open
+		cmd = tea.Batch(cmd, m.dialogFlag())
+	}
+	return m, cmd
+}
+
+func (m *model) dialogFlag() tea.Cmd {
+	flag := "0"
+	if m.inDialog {
+		flag = "1"
+	}
+	return m.tmux("set-option", "-p", "-t", tmux.ListPane, "@deck-dialog", flag)
+}
+
+func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		if m.picker != nil {
+			m.picker.input.SetWidth(max(m.width-4, 1))
+		}
+		if m.rename != nil {
+			m.rename.input.SetWidth(max(m.width-4, 1))
+		}
+		m.search.SetWidth(max(m.width-2, 1))
+	case tea.FocusMsg:
+		m.focused = true
+		m.prevSelected = m.selected
+	case tea.BlurMsg:
+		m.focused = false
+	case tickMsg:
+		if m.quitting {
+			return m, nil
+		}
+		return m, m.refresh()
+	case refreshMsg:
+		if m.quitting {
+			return m, nil
+		}
+		next := tea.Tick(tickEvery, func(time.Time) tea.Msg { return tickMsg{} })
+		if msg.err != nil {
+			m.err = msg.err
+			return m, next
+		}
+		return m, tea.Batch(next, m.apply(msg))
+	case prStateMsg:
+		e := m.prs[msg.url]
+		if e == nil {
+			e = &prEntry{}
+			m.prs[msg.url] = e
+		}
+		e.pending = false
+		if msg.err != nil {
+			e.until = time.Now().Add(prErrorTTL)
+		} else {
+			e.state, e.until = msg.state, time.Now().Add(prTTL)
+		}
+	case startedMsg:
+		return m, m.started(msg)
+	case restartedMsg:
+		return m, m.restarted(msg)
+	case takenOverMsg:
+		return m, m.tookOver(msg)
+	case trashedMsg:
+		return m, m.trashed(msg)
+	case quitFailedMsg:
+		m.quitting = false
+		m.err = msg.err
+		return m, m.refresh()
+	case errMsg:
+		m.err = msg.err
+	case stopFailedMsg:
+		m.err = msg.err
+		delete(m.ending, msg.entry.SessionID)
+		if !slices.ContainsFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == msg.entry.SessionID }) {
+			entry := msg.entry
+			entry.Num = store.Claim(m.state.Active, entry.Num)
+			m.state.Active = append(m.state.Active, entry)
+		}
+		m.rebuild()
+		return m, m.saveState()
+	case tea.MouseClickMsg:
+		return m, m.click(msg.Mouse())
+	case tea.MouseWheelMsg:
+		return m, m.wheel(msg.Mouse())
+	case tea.KeyPressMsg:
+		if msg.Text == tmux.NextKey || msg.Text == tmux.PrevKey {
+			return m, m.switchLive(msg.Text == tmux.NextKey)
+		}
+		if n := tmux.Number(msg.Text); n > 0 {
+			return m, m.jump(n)
+		}
+		m.hint = ""
+		m.err = nil
+		if m.quitting {
+			return m, nil
+		}
+		if m.prompt != nil {
+			return m, m.promptKey(msg)
+		}
+		if m.takeover != nil {
+			return m, m.takeoverKey(msg)
+		}
+		if m.quit != nil {
+			return m, m.quitKey(msg)
+		}
+		if m.del != nil {
+			return m, m.deleteKey(msg)
+		}
+		if m.restart != nil {
+			return m, m.restartKey(msg)
+		}
+		if m.picker != nil {
+			return m, m.pickerKey(msg)
+		}
+		if m.rename != nil {
+			return m, m.renameKey(msg)
+		}
+		if m.searching {
+			return m, m.searchKey(msg)
+		}
+		return m, m.key(msg)
+	default:
+		var cmd tea.Cmd
+		switch {
+		case m.picker != nil:
+			m.picker.input, cmd = m.picker.input.Update(msg)
+		case m.rename != nil:
+			m.rename.input, cmd = m.rename.input.Update(msg)
+		case m.searching:
+			m.search, cmd = m.search.Update(msg)
+		}
+		return m, cmd
+	}
+	return m, nil
+}
+
+func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
+	switch msg.String() {
+	case "up", "k":
+		return m.move(-1)
+	case "down", "j":
+		return m.move(1)
+	case "enter":
+		return m.enter()
+	case "tab":
+		return m.toggleMode()
+	case "/":
+		m.searching = true
+		return m.search.Focus()
+	case "esc":
+		if m.query != "" {
+			return m.clearSearch()
+		}
+		if m.mode == modeSuspended {
+			return nil
+		}
+		m.selected = m.prevSelected
+		m.syncCursor()
+		return tea.Sequence(m.showSelected(), m.focus(tmux.Slot))
+	case "n":
+		m.picker = newPicker(m.folders, m.width)
+		return tea.Batch(m.zoom(true), m.picker.input.Focus())
+	case "s", "r":
+		r, ok := m.current()
+		if !ok || (msg.String() == "s" && r.Kind != deck.Live && r.Kind != deck.Stale) {
+			return nil
+		}
+		if msg.String() == "s" && r.Kind == deck.Stale {
+			return m.dropStale(r)
+		}
+		m.rename = newRenameDialog(r, msg.String() == "s", m.width)
+		return tea.Batch(m.zoom(true), m.rename.input.Focus())
+	case "t":
+		r, ok := m.current()
+		if !ok || r.Kind != deck.Elsewhere {
+			return nil
+		}
+		m.takeover = &takeoverDialog{row: r}
+		return m.zoom(true)
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		return m.jump(int(msg.String()[0] - '0'))
+	case "d":
+		r, ok := m.current()
+		if !ok || r.Kind != deck.Suspended || m.resuming[r.SessionID] {
+			return nil
+		}
+		m.del = &deleteDialog{row: r}
+		return m.zoom(true)
+	case "R":
+		r, ok := m.current()
+		if !ok || m.mode != modeActive || r.Kind != deck.Live || m.resuming[r.SessionID] {
+			return nil
+		}
+		m.restart = &restartDialog{row: r}
+		return m.zoom(true)
+	case "o":
+		if r, ok := m.current(); ok {
+			return m.openPRs(r)
+		}
+		return nil
+	case "q":
+		text := fmt.Sprintf("claude-deck closed, %s still running", sessionCount(len(m.liveRows())))
+		return m.tmux("detach-client", "-E", "echo "+tmux.ShellQuote(text))
+	case "Q":
+		m.quit = &quitDialog{count: len(m.liveRows())}
+		return m.zoom(true)
+	}
+	return nil
+}
+
+func (m *model) dialogOpen() bool {
+	return m.prompt != nil || m.picker != nil || m.rename != nil || m.takeover != nil || m.quit != nil || m.del != nil || m.restart != nil
+}
+
+func (m *model) liveRows() []deck.Row {
+	var rows []deck.Row
+	for _, r := range m.active {
+		if r.Kind == deck.Live {
+			rows = append(rows, r)
+		}
+	}
+	return rows
+}
+
+func (m *model) switchLive(next bool) tea.Cmd {
+	if m.quitting || m.dialogOpen() {
+		return nil
+	}
+	rows := m.liveRows()
+	if len(rows) == 0 {
+		return nil
+	}
+	i := slices.IndexFunc(rows, func(r deck.Row) bool { return r.PaneID == m.slot })
+	if i < 0 {
+		i = slices.IndexFunc(rows, func(r deck.Row) bool { return r.SessionID == m.selected })
+	}
+	step := 1
+	if !next {
+		step = -1
+	}
+	switch {
+	case i >= 0:
+		i = (i + step + len(rows)) % len(rows)
+	case next:
+		i = 0
+	default:
+		i = len(rows) - 1
+	}
+	return m.switchTo(rows[i])
+}
+
+func (m *model) jump(n int) tea.Cmd {
+	if m.quitting || m.dialogOpen() {
+		return nil
+	}
+	i := slices.IndexFunc(m.active, func(r deck.Row) bool {
+		return r.Num == n && (r.Kind == deck.Live || r.Kind == deck.Stale)
+	})
+	if i < 0 {
+		return nil
+	}
+	r := m.active[i]
+	if r.Kind == deck.Live {
+		return m.switchTo(r)
+	}
+	m.selectRow(r.SessionID)
+	return tea.Sequence(m.showSelected(), m.focus(tmux.ListPane))
+}
+
+func (m *model) selectRow(id string) {
+	m.setMode(modeActive)
+	m.selected = id
+	if !slices.ContainsFunc(m.shown(), func(s deck.Row) bool { return s.SessionID == id }) {
+		m.resetSearch()
+	}
+	m.syncCursor()
+}
+
+func (m *model) switchTo(r deck.Row) tea.Cmd {
+	m.selectRow(r.SessionID)
+	return tea.Sequence(m.show(r.PaneID, "", false), m.focus(tmux.Slot))
+}
+
+func (m *model) openPRs(r deck.Row) tea.Cmd {
+	var urls []string
+	for _, pr := range visiblePRs(r.Summary.PRs, m.prState) {
+		if linkable(pr.URL) {
+			urls = append(urls, pr.URL)
+		}
+	}
+	if len(urls) == 0 {
+		return nil
+	}
+	return openURLs(urls)
+}
+
+func openURLs(urls []string) tea.Cmd {
+	opener := os.Getenv("CLAUDE_DECK_OPEN")
+	if opener == "" {
+		opener = "open"
+	}
+	return func() tea.Msg {
+		for _, u := range urls {
+			if out, err := exec.Command(opener, u).CombinedOutput(); err != nil {
+				return errMsg{fmt.Errorf("open %s: %w: %s", u, err, strings.TrimSpace(string(out)))}
+			}
+		}
+		return nil
+	}
+}
+
+func (m *model) stopAll() tea.Cmd {
+	ops, preview, rows := m.ops, m.previewPane, m.liveRows()
+	return func() tea.Msg {
+		if preview != "" {
+			ops.Show(preview)
+		}
+		var wg sync.WaitGroup
+		for _, r := range rows {
+			wg.Go(func() { ops.Stop(r.PaneID, r.Busy) })
+		}
+		wg.Wait()
+		wait := fmt.Sprintf(`i=0; while tmux -L "%s" list-sessions >/dev/null 2>&1; do i=$((i+1)); [ $i -ge 50 ] && exit 1; sleep 0.1; done; echo "claude-deck stopped"`, ops.T.Socket)
+		if _, err := ops.T.Run("detach-client", "-E", "sh -c "+tmux.ShellQuote(wait)); err != nil {
+			return quitFailedMsg{err}
+		}
+		if _, err := ops.T.Run("kill-server"); err != nil {
+			return quitFailedMsg{err}
+		}
+		return nil
+	}
+}
+
+func (m *model) withoutEnding(sessions []live.Session) []live.Session {
+	if len(m.ending) == 0 {
+		return sessions
+	}
+	return slices.DeleteFunc(slices.Clone(sessions), func(l live.Session) bool { return m.ending[l.SessionID] })
+}
+
+func (m *model) markEnding(id string) {
+	if m.ending == nil {
+		m.ending = map[string]bool{}
+	}
+	m.ending[id] = true
+	m.in.Live = m.withoutEnding(m.in.Live)
+}
+
+func (m *model) confirmRename(d *renameDialog) tea.Cmd {
+	if name := strings.TrimSpace(d.input.Value()); name != "" {
+		if m.state.Names == nil {
+			m.state.Names = map[string]string{}
+		}
+		m.state.Names[d.id] = name
+	}
+	if !d.suspend {
+		m.rebuild()
+		return tea.Batch(m.saveState(), m.zoom(false), m.refreshPreview())
+	}
+	var entry store.ActiveEntry
+	for _, e := range m.state.Active {
+		if e.SessionID == d.id {
+			entry = e
+		}
+	}
+	m.state.Active = slices.DeleteFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == d.id })
+	m.markEnding(d.id)
+	m.rebuild()
+	ops, pane, busy := m.ops, d.pane, d.busy
+	stop := func() tea.Msg {
+		if err := ops.Stop(pane, busy); err != nil {
+			return stopFailedMsg{entry: entry, err: err}
+		}
+		return nil
+	}
+	return tea.Batch(m.saveState(), tea.Sequence(m.zoom(false), m.showSelected(), stop))
+}
+
+func (m *model) refreshPreview() tea.Cmd {
+	if r, ok := m.current(); ok && r.Kind != deck.Live && m.slot == m.previewPane {
+		return m.showSelected()
+	}
+	return nil
+}
+
+func (m *model) endDead(panes []tmux.Pane, slotPane string) tea.Cmd {
+	var kills []tea.Cmd
+	inSlot := false
+	for _, p := range panes {
+		if !p.Dead || p.SessionID == "" || m.resuming[p.SessionID] {
+			continue
+		}
+		before := len(m.state.Active)
+		m.state.Active = slices.DeleteFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == p.SessionID })
+		if len(m.state.Active) == before {
+			continue
+		}
+		inSlot = inSlot || p.ID == slotPane
+		m.markEnding(p.SessionID)
+		kills = append(kills, m.tmux("kill-pane", "-t", p.ID))
+	}
+	if len(kills) == 0 {
+		return nil
+	}
+	moved := m.rebuild()
+	var seq []tea.Cmd
+	if inSlot || moved {
+		seq = append(seq, m.showSelected())
+	}
+	seq = append(seq, kills...)
+	return tea.Batch(m.saveState(), tea.Sequence(seq...))
+}
+
+func (m *model) move(d int) tea.Cmd {
+	return m.selectIndex(m.cursor + d)
+}
+
+func (m *model) selectIndex(i int) tea.Cmd {
+	rows := m.shown()
+	if len(rows) == 0 {
+		return nil
+	}
+	m.cursor = min(max(i, 0), len(rows)-1)
+	m.selected = rows[m.cursor].SessionID
+	return m.showSelected()
+}
+
+func (m *model) shown() []deck.Row {
+	rows := m.active
+	if m.mode == modeSuspended {
+		rows = m.suspended
+	}
+	return deck.Filter(rows, m.query)
+}
+
+func (m *model) setMode(mode int) bool {
+	if m.mode == mode {
+		return false
+	}
+	cur := position{m.cursor, m.selected}
+	m.cursor, m.selected = m.other.cursor, m.other.selected
+	m.other = cur
+	m.mode = mode
+	m.resetSearch()
+	m.syncCursor()
+	return true
+}
+
+func (m *model) resetSearch() {
+	m.query = ""
+	m.searching = false
+	m.search.Reset()
+	m.search.Blur()
+}
+
+func (m *model) toggleMode() tea.Cmd {
+	next := modeSuspended
+	if m.mode == modeSuspended {
+		next = modeActive
+	}
+	m.setMode(next)
+	return m.showSelected()
+}
+
+func (m *model) clearSearch() tea.Cmd {
+	m.resetSearch()
+	m.syncCursor()
+	return m.showSelected()
+}
+
+func (m *model) searchKey(msg tea.KeyPressMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc":
+		return m.clearSearch()
+	case "enter":
+		m.searching = false
+		m.search.Blur()
+		return nil
+	case "up":
+		return m.move(-1)
+	case "down":
+		return m.move(1)
+	}
+	var cmd tea.Cmd
+	m.search, cmd = m.search.Update(msg)
+	if value := m.search.Value(); value != m.query {
+		m.query = value
+		m.cursor, m.selected = 0, ""
+		m.syncCursor()
+		cmd = tea.Batch(cmd, m.showSelected())
+	}
+	return cmd
+}
+
+func (m *model) enter() tea.Cmd {
+	r, ok := m.current()
+	if !ok {
+		return nil
+	}
+	switch r.Kind {
+	case deck.Elsewhere:
+		m.hint = "running in another terminal"
+		return nil
+	case deck.Live:
+		for i := range m.state.Active {
+			if m.state.Active[i].SessionID == r.SessionID {
+				m.state.Active[i].LastInteraction = time.Now()
+			}
+		}
+		m.rebuild()
+		return tea.Batch(m.saveState(), tea.Sequence(m.show(r.PaneID, "", false), m.focus(tmux.Slot)))
+	case deck.Suspended, deck.Stale:
+		if m.resuming[r.SessionID] {
+			return nil
+		}
+		m.resuming[r.SessionID] = true
+		delete(m.ending, r.SessionID)
+		return m.resume(r)
+	}
+	return nil
+}
+
+func (m *model) started(msg startedMsg) tea.Cmd {
+	delete(m.resuming, msg.id)
+	inBatch := m.batch[msg.id]
+	delete(m.batch, msg.id)
+	if msg.err != nil {
+		m.err = msg.err
+		if inBatch {
+			return m.finishBatch()
+		}
+		return m.zoom(false)
+	}
+	m.setMode(modeActive)
+	entry := store.ActiveEntry{SessionID: msg.id, Cwd: msg.cwd, Name: msg.name, LastInteraction: time.Now()}
+	if i := slices.IndexFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == msg.id }); i >= 0 {
+		if inBatch {
+			entry.LastInteraction = m.state.Active[i].LastInteraction
+		}
+		entry.Num = m.state.Active[i].Num
+		m.state.Active = slices.Delete(m.state.Active, i, i+1)
+	}
+	entry.Num = store.Claim(m.state.Active, entry.Num)
+	m.state.Active = append(m.state.Active, entry)
+	if m.in.Panes == nil {
+		m.in.Panes = map[string]string{}
+	}
+	m.in.Panes[msg.id] = msg.pane
+	if inBatch {
+		m.rebuild()
+		return tea.Batch(m.saveState(), m.finishBatch())
+	}
+	m.selected = msg.id
+	m.rebuild()
+	if !slices.ContainsFunc(m.shown(), func(r deck.Row) bool { return r.SessionID == msg.id }) {
+		m.resetSearch()
+		m.selected = msg.id
+		m.syncCursor()
+	}
+	return tea.Batch(m.saveState(), tea.Sequence(m.zoom(false), m.show(msg.pane, "", false), m.focus(tmux.Slot)))
+}
+
+func (m *model) finishBatch() tea.Cmd {
+	if len(m.batch) > 0 {
+		return nil
+	}
+	i := slices.IndexFunc(m.active, func(r deck.Row) bool { return r.Kind == deck.Live })
+	if i < 0 {
+		return nil
+	}
+	m.resetSearch()
+	m.selected = m.active[i].SessionID
+	m.syncCursor()
+	return tea.Sequence(m.showSelected(), m.focus(tmux.Slot))
+}
+
+func (m *model) staleRows() []deck.Row {
+	var rows []deck.Row
+	for _, r := range m.active {
+		if r.Kind == deck.Stale {
+			rows = append(rows, r)
+		}
+	}
+	return rows
+}
+
+func (m *model) promptKey(msg tea.KeyPressMsg) tea.Cmd {
+	switch msg.String() {
+	case "y":
+		m.prompt = nil
+		cmds := []tea.Cmd{m.zoom(false)}
+		for _, r := range m.staleRows() {
+			if m.resuming[r.SessionID] {
+				continue
+			}
+			m.resuming[r.SessionID] = true
+			m.batch[r.SessionID] = true
+			delete(m.ending, r.SessionID)
+			cmds = append(cmds, m.resume(r))
+		}
+		return tea.Sequence(cmds...)
+	case "n", "esc":
+		m.prompt = nil
+		return tea.Sequence(m.zoom(false), m.showSelected())
+	}
+	return nil
+}
+
+func (m *model) dropStale(r deck.Row) tea.Cmd {
+	m.state.Active = slices.DeleteFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == r.SessionID })
+	m.rebuild()
+	return tea.Batch(m.saveState(), m.showSelected())
+}
+
+func (m *model) refresh() tea.Cmd {
+	now := time.Now()
+	ids := make([]string, 0, len(m.state.Active))
+	for _, e := range m.state.Active {
+		ids = append(ids, e.SessionID)
+	}
+	files, folders, agents := m.in.Files, m.folders, m.in.Agents
+	list := files == nil || now.Sub(m.listedAt) >= listEvery
+	if list {
+		m.listedAt = now
+	}
+	save := now.Sub(m.savedAt) >= saveEvery
+	if save {
+		m.savedAt = now
+	}
+	t, reader, home, claudeHome := m.ops.T, m.reader, m.home, m.claudeHome
+	return func() tea.Msg {
+		panes, err := t.Panes()
+		if err != nil {
+			return refreshMsg{err: err}
+		}
+		msg := refreshMsg{panes: panes, files: files, folders: folders, events: map[string]events.State{}, summaries: map[string]transcript.Summary{}}
+		msg.live, _ = live.Running(claudeHome)
+		for _, id := range ids {
+			if ev, err := events.Read(filepath.Join(home, "events"), id); err == nil {
+				msg.events[id] = ev
+			}
+		}
+		if list {
+			if listed, err := transcript.List(claudeHome); err == nil {
+				msg.files = listed
+			}
+		}
+		for _, f := range msg.files {
+			if s, err := reader.Summary(f.Path); err == nil {
+				msg.summaries[f.SessionID] = s
+			}
+		}
+		if list {
+			msg.folders = existingFolders(msg.summaries)
+		}
+		msg.agents = agents
+		if list {
+			msg.agents = runningAgents(ids, msg.events, msg.live, msg.files)
+		}
+		if save {
+			reader.Save()
+		}
+		return msg
+	}
+}
+
+func runningAgents(ids []string, evs map[string]events.State, sessions []live.Session, files []transcript.File) map[string][]string {
+	paths := make(map[string]string, len(files))
+	for _, f := range files {
+		paths[f.SessionID] = f.Path
+	}
+	agents := map[string][]string{}
+	for _, id := range ids {
+		if running := evs[id].Agents; len(running) > 0 {
+			agents[id] = transcript.AgentDescriptions(paths[id], running)
+		}
+	}
+	since := time.Now().Add(-agentWindow)
+	for _, l := range sessions {
+		if slices.Contains(ids, l.SessionID) {
+			continue
+		}
+		if running := transcript.RecentAgents(paths[l.SessionID], since); len(running) > 0 {
+			agents[l.SessionID] = running
+		}
+	}
+	return agents
+}
+
+func (m *model) apply(msg refreshMsg) tea.Cmd {
+	m.in.Panes = map[string]string{}
+	slotPane := ""
+	for _, p := range msg.panes {
+		if p.Role == "preview" {
+			m.previewPane = p.ID
+		}
+		if p.Target == strings.TrimPrefix(tmux.Slot, "=") {
+			slotPane = p.ID
+		}
+		if !p.Dead && p.SessionID != "" && !m.resuming[p.SessionID] {
+			m.in.Panes[p.SessionID] = p.ID
+		}
+	}
+	liveIDs := map[string]bool{}
+	for _, l := range msg.live {
+		liveIDs[l.SessionID] = true
+	}
+	for id := range m.ending {
+		if !liveIDs[id] {
+			delete(m.ending, id)
+		}
+	}
+	m.in.Live = m.withoutEnding(msg.live)
+	m.in.Events = msg.events
+	m.in.Files = m.withoutGone(msg.files)
+	m.in.Summaries = msg.summaries
+	m.in.Agents = msg.agents
+	m.folders = msg.folders
+
+	var cmds []tea.Cmd
+	cmds = append(cmds, m.endDead(msg.panes, slotPane))
+	if m.rebuild() && m.loaded {
+		cmds = append(cmds, m.showSelected())
+	}
+	if !m.loaded {
+		m.loaded = true
+		m.slot = slotPane
+		i := slices.IndexFunc(m.active, func(r deck.Row) bool { return r.PaneID != "" && r.PaneID == slotPane })
+		if i >= 0 {
+			m.cursor, m.selected = i, m.active[i].SessionID
+		}
+		m.prevSelected = m.selected
+		if n := len(m.staleRows()); n > 0 {
+			m.prompt = &resumePrompt{count: n}
+		} else if i < 0 {
+			cmds = append(cmds, m.showSelected())
+		}
+	}
+	if m.dialogOpen() {
+		cmds = append(cmds, m.zoom(true))
+	}
+	cmds = append(cmds, m.fetchPRs())
+	return tea.Batch(cmds...)
+}
+
+func (m *model) rebuild() (moved bool) {
+	before := m.selected
+	m.in.State = m.state
+	m.active, m.suspended = deck.Build(m.in)
+	m.syncCursor()
+	return m.selected != before
+}
+
+func (m *model) syncCursor() {
+	rows := m.shown()
+	if i := slices.IndexFunc(rows, func(r deck.Row) bool { return r.SessionID == m.selected }); i >= 0 {
+		m.cursor = i
+		return
+	}
+	m.cursor = min(m.cursor, len(rows)-1)
+	m.cursor = max(m.cursor, 0)
+	m.selected = ""
+	if len(rows) > 0 {
+		m.selected = rows[m.cursor].SessionID
+	}
+}
+
+func (m *model) current() (deck.Row, bool) {
+	rows := m.shown()
+	if m.cursor < 0 || m.cursor >= len(rows) {
+		return deck.Row{}, false
+	}
+	return rows[m.cursor], true
+}
+
+func previewTarget(r deck.Row) string {
+	return r.TranscriptPath + "\t" + r.Name
+}
+
+func (m *model) showSelected() tea.Cmd {
+	r, ok := m.current()
+	switch {
+	case !ok:
+		return m.show(m.previewPane, "", true)
+	case r.Kind == deck.Live:
+		return m.show(r.PaneID, "", false)
+	default:
+		return m.show(m.previewPane, previewTarget(r), true)
+	}
+}
+
+func (m *model) show(pane, target string, preview bool) tea.Cmd {
+	m.slot = pane
+	w := m.want
+	w.mu.Lock()
+	w.pane, w.target, w.preview = pane, target, preview
+	w.mu.Unlock()
+	ops, file := m.ops, filepath.Join(m.home, "preview-target")
+	return func() tea.Msg {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		if w.preview {
+			if err := os.WriteFile(file, []byte(w.target), 0o644); err != nil {
+				return errMsg{err}
+			}
+		}
+		if w.pane == "" {
+			return nil
+		}
+		if err := ops.Show(w.pane); err != nil {
+			return errMsg{err}
+		}
+		return nil
+	}
+}
+
+func (m *model) focus(target string) tea.Cmd {
+	ops := m.ops
+	return func() tea.Msg {
+		if err := ops.Focus(target); err != nil {
+			return errMsg{err}
+		}
+		return nil
+	}
+}
+
+func (m *model) zoom(on bool) tea.Cmd {
+	t := m.ops.T
+	return func() tea.Msg {
+		flag, err := t.Run("display-message", "-p", "-t", tmux.ListPane, "#{window_zoomed_flag}")
+		if err != nil {
+			return errMsg{err}
+		}
+		if (strings.TrimSpace(flag) == "1") == on {
+			return nil
+		}
+		if _, err := t.Run("resize-pane", "-Z", "-t", tmux.ListPane); err != nil {
+			return errMsg{err}
+		}
+		return nil
+	}
+}
+
+func (m *model) tmux(args ...string) tea.Cmd {
+	t := m.ops.T
+	return func() tea.Msg {
+		if _, err := t.Run(args...); err != nil {
+			return errMsg{err}
+		}
+		return nil
+	}
+}
+
+func (m *model) saveState() tea.Cmd {
+	sv, home := m.saver, m.home
+	sv.mu.Lock()
+	sv.state = store.State{Names: maps.Clone(m.state.Names), Active: slices.Clone(m.state.Active)}
+	sv.mu.Unlock()
+	return func() tea.Msg {
+		sv.mu.Lock()
+		defer sv.mu.Unlock()
+		if err := sv.state.Save(home); err != nil {
+			return errMsg{err}
+		}
+		return nil
+	}
+}
+
+func (m *model) start(cwd string) tea.Cmd {
+	id := uuid.NewV4().String()
+	ops := m.ops
+	return func() tea.Msg {
+		pane, err := ops.Start(cwd, id, "", false)
+		return startedMsg{id: id, cwd: cwd, pane: pane, err: err}
+	}
+}
+
+func (m *model) resume(r deck.Row) tea.Cmd {
+	ops := m.ops
+	return func() tea.Msg {
+		pane, err := ops.Start(r.Cwd, r.SessionID, r.Name, true)
+		return startedMsg{id: r.SessionID, cwd: r.Cwd, name: r.Name, pane: pane, err: err}
+	}
+}
+
+func (m *model) fetchPRs() tea.Cmd {
+	now := time.Now()
+	var cmds []tea.Cmd
+	for _, r := range m.visibleRows() {
+		for _, pr := range r.Summary.PRs {
+			e := m.prs[pr.URL]
+			if pr.URL == "" || (e != nil && (e.pending || now.Before(e.until))) {
+				continue
+			}
+			if e == nil {
+				e = &prEntry{}
+				m.prs[pr.URL] = e
+			}
+			e.pending = true
+			url, sem := pr.URL, m.prSem
+			cmds = append(cmds, func() tea.Msg {
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				state, err := gh.State(url)
+				return prStateMsg{url: url, state: state, err: err}
+			})
+		}
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m *model) prState(url string) string {
+	if e := m.prs[url]; e != nil {
+		return e.state
+	}
+	return ""
+}

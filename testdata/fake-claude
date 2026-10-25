@@ -1,0 +1,10 @@
+#!/bin/bash
+trap 'exit 0' TERM
+echo "fake claude $*"
+while read -r line; do
+  case "$line" in
+    /exit) exit 0 ;;
+    die) exit 1 ;;
+    *) echo "$line" ;;
+  esac
+done
