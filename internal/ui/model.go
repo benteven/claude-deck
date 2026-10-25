@@ -94,6 +94,8 @@ type refreshMsg struct {
 	summaries map[string]transcript.Summary
 	agents    map[string][]string
 	folders   []string
+	geo       geometry
+	geoOK     bool
 	err       error
 }
 
@@ -150,6 +152,8 @@ type model struct {
 	listedAt time.Time
 	savedAt  time.Time
 	loaded   bool
+
+	windowWidth int
 
 	active    []deck.Row
 	suspended []deck.Row
@@ -304,7 +308,7 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 			return m, next
 		}
-		return m, tea.Batch(next, m.apply(msg))
+		return m, tea.Batch(next, m.dragged(msg.geo, msg.geoOK), m.apply(msg))
 	case prStateMsg:
 		e := m.prs[msg.url]
 		if e == nil {
@@ -404,6 +408,10 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 		return m.enter()
 	case "tab":
 		return m.toggleMode()
+	case "<":
+		return m.resizeList(-widthStep)
+	case ">":
+		return m.resizeList(widthStep)
 	case "/":
 		m.searching = true
 		return m.search.Focus()
@@ -894,6 +902,7 @@ func (m *model) refresh() tea.Cmd {
 			return refreshMsg{err: err}
 		}
 		msg := refreshMsg{panes: panes, files: files, folders: folders, events: map[string]events.State{}, summaries: map[string]transcript.Summary{}}
+		msg.geo, msg.geoOK = sampleGeometry(t)
 		msg.live, _ = live.Running(claudeHome)
 		msg.starts = map[int]time.Time{}
 		keys := map[paneProc]bool{}

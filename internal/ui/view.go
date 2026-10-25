@@ -13,7 +13,6 @@ import (
 
 	"github.com/benteven/claude-deck/internal/deck"
 	"github.com/benteven/claude-deck/internal/textclean"
-	"github.com/benteven/claude-deck/internal/tmux"
 	"github.com/benteven/claude-deck/internal/transcript"
 )
 
@@ -125,7 +124,7 @@ func (m *model) layout(w, h int) (blocks [][]string, hint string, room int) {
 
 func (m *model) size() (int, int) {
 	if m.width < 1 || m.height < 1 {
-		return tmux.ListWidth, 24
+		return m.ops.Cfg.ListWidth, 24
 	}
 	return m.width, m.height
 }
@@ -425,13 +424,18 @@ func (m *model) hintLine(w int) string {
 }
 
 func (m *model) listHint(w int) string {
-	text := "enter open  n new  s suspend  Q quit\n/ search  tab suspended  q close"
+	lines := [][]string{{"enter open", "n new", "s suspend", "Q quit"}, {"/ search", "tab suspended", "q close"}}
 	switch {
 	case m.mode == modeSuspended:
-		text = "enter resume  r rename  tab active\nd delete  / search  q close  Q quit"
+		lines = [][]string{{"enter resume", "r rename", "tab active"}, {"d delete", "/ search", "q close", "Q quit"}}
 	case m.onElsewhere():
-		text = "t take over  n new  q close  Q quit\n/ search  tab suspended"
+		lines = [][]string{{"t take over", "n new", "q close", "Q quit"}, {"/ search", "tab suspended"}}
 	}
+	fitted := make([]string, len(lines))
+	for i, items := range lines {
+		fitted[i] = fitItems(items, w)
+	}
+	text := strings.Join(fitted, "\n")
 	if r, ok := m.current(); ok && r.Kind == deck.Live {
 		text = addItem(text, "R restart", w)
 	}
