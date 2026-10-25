@@ -42,12 +42,20 @@ func sampleGeometry(t tmux.Client) (geometry, bool) {
 }
 
 func (m *model) dragged(g geometry, ok bool) tea.Cmd {
-	prev := m.windowWidth
+	prev, seen := m.windowWidth, m.dragSeen
+	m.dragSeen = 0
 	if !ok {
 		return nil
 	}
 	m.windowWidth = g.window
+	if g.option > 0 {
+		m.ops.Cfg.ListWidth = store.ClampListWidth(g.option)
+	}
 	if g.zoomed || prev == 0 || g.window != prev || g.pane == g.option || g.option >= g.window-2 {
+		return nil
+	}
+	m.dragSeen = g.pane
+	if seen != g.pane {
 		return nil
 	}
 	return m.setWidth(g.pane)
@@ -59,11 +67,15 @@ func (m *model) resizeList(delta int) tea.Cmd {
 
 func (m *model) setWidth(w int) tea.Cmd {
 	w = store.ClampListWidth(w)
+	changed := w != m.ops.Cfg.ListWidth
 	m.ops.Cfg.ListWidth = w
 	t, home := m.ops.T, m.home
 	return func() tea.Msg {
 		if err := t.SetListWidth(w); err != nil {
 			return errMsg{err}
+		}
+		if !changed {
+			return nil
 		}
 		if err := store.SaveListWidth(home, w); err != nil {
 			return errMsg{fmt.Errorf("save list width: %w", err)}

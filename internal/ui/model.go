@@ -154,6 +154,7 @@ type model struct {
 	loaded   bool
 
 	windowWidth int
+	dragSeen    int
 
 	active    []deck.Row
 	suspended []deck.Row

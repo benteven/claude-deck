@@ -28,9 +28,13 @@ func ClampListWidth(w int) int {
 }
 
 func SaveListWidth(dir string, w int) error {
+	path := filepath.Join(dir, "config.json")
 	raw := map[string]json.RawMessage{}
-	if err := readJSON(filepath.Join(dir, "config.json"), &raw); err != nil {
+	if err := readJSON(path, &raw); err != nil {
 		return err
+	}
+	if raw == nil {
+		raw = map[string]json.RawMessage{}
 	}
 	raw["list_width"] = json.RawMessage(strconv.Itoa(w))
 	data, err := json.MarshalIndent(raw, "", "  ")
@@ -40,7 +44,14 @@ func SaveListWidth(dir string, w int) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".config-*")
+	mode := os.FileMode(0o644)
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+		if info, err := os.Stat(path); err == nil {
+			mode = info.Mode().Perm()
+		}
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".config-*")
 	if err != nil {
 		return err
 	}
@@ -49,10 +60,14 @@ func SaveListWidth(dir string, w int) error {
 		tmp.Close()
 		return err
 	}
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), filepath.Join(dir, "config.json"))
+	return os.Rename(tmp.Name(), path)
 }
 
 type ActiveEntry struct {
