@@ -9,6 +9,14 @@ claude-deck is not made by or affiliated with Anthropic.
 ## Install
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/benteven/claude-deck/main/install.sh | sh
+```
+
+This installs a release binary to `~/.local/bin`. Set `CLAUDE_DECK_BIN_DIR` to use another folder, or `CLAUDE_DECK_VERSION` to pin a release. You need tmux.
+
+With Homebrew:
+
+```sh
 brew install benteven/tap/claude-deck
 ```
 
@@ -20,7 +28,7 @@ From source (Go 1.27 or later):
 go install github.com/benteven/claude-deck@latest
 ```
 
-macOS only for now.
+macOS and Linux. On Linux, `d` needs `gio` or `trash-cli` to move files to the Trash.
 
 ## Use
 
@@ -77,7 +85,7 @@ Run `claude-deck` again to come back to running sessions. After a restart, sessi
 
 claude-deck runs its own tmux server (socket `claude-deck`), so your own tmux setup is not touched. The list is a Bubble Tea program in the left pane. Each Claude Code session is a real process in its own tmux pane, swapped into the right side when you select it.
 
-Session data comes from Claude Code's own files in `~/.claude`, read only. The one exception is `d`, which moves a transcript to the macOS Trash. Sessions started by the app get hooks through `claude --settings`, which mark when a session waits for you; your global Claude Code settings are not changed.
+Session data comes from Claude Code's own files in `~/.claude`, read only. The one exception is `d`, which moves a transcript to the Trash. Sessions started by the app get hooks through `claude --settings`, which mark when a session waits for you; your global Claude Code settings are not changed.
 
 App state lives in `~/.config/claude-deck`. Set `"prefix"` in `config.json` to use another key than `ctrl-b`, and `"claude_args"` to pass extra flags to every session.
 
