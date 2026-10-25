@@ -64,8 +64,6 @@ func (m *model) View() tea.View {
 	switch {
 	case m.picker != nil:
 		content = m.picker.view(w, h, m.focused)
-	case m.rename != nil:
-		content = m.rename.view(w, h)
 	case m.prompt != nil:
 		content = m.prompt.view(w, h)
 	case m.takeover != nil:
@@ -113,6 +111,14 @@ func (m *model) layout(w, h int) (blocks [][]string, hint string, room int) {
 			blocks = append(blocks, append([]string{gray.Render("Elsewhere")}, rowLines(r, w, i == m.cursor, m.focused, m.prState)...))
 		default:
 			blocks = append(blocks, rowLines(r, w, i == m.cursor, m.focused, m.prState))
+		}
+		if i == m.cursor && m.rename != nil {
+			last := blocks[len(blocks)-1]
+			idx := 0
+			if len(last) > 0 && ansi.Strip(last[0]) == "Elsewhere" {
+				idx = 1
+			}
+			last[idx] = m.rename.line(w, m.focused)
 		}
 	}
 	hint = m.hintLine(w)
@@ -400,6 +406,9 @@ func contextLine(pct int) string {
 }
 
 func (m *model) hintLine(w int) string {
+	if m.rename != nil {
+		return m.rename.hint(w)
+	}
 	var text string
 	style := gray
 	switch {

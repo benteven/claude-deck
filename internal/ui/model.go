@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -428,8 +429,12 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 		if msg.String() == "s" && r.Kind == deck.Stale {
 			return m.dropStale(r)
 		}
-		m.rename = newRenameDialog(r, msg.String() == "s", m.width)
-		return tea.Batch(m.zoom(true), m.rename.input.Focus())
+		order := make([]string, 0, len(m.shown()))
+		for _, s := range m.shown() {
+			order = append(order, s.SessionID)
+		}
+		m.rename = newRenameDialog(r, msg.String() == "s", m.width, order)
+		return m.rename.input.Focus()
 	case "t":
 		r, ok := m.current()
 		if !ok || r.Kind != deck.Elsewhere {
@@ -615,7 +620,7 @@ func (m *model) confirmRename(d *renameDialog) tea.Cmd {
 	}
 	if !d.suspend {
 		m.rebuild()
-		return tea.Batch(m.saveState(), m.zoom(false), m.refreshPreview())
+		return tea.Batch(m.saveState(), m.refreshPreview())
 	}
 	var entry store.ActiveEntry
 	for _, e := range m.state.Active {
@@ -633,7 +638,7 @@ func (m *model) confirmRename(d *renameDialog) tea.Cmd {
 		}
 		return nil
 	}
-	return tea.Batch(m.saveState(), tea.Sequence(m.zoom(false), m.showSelected(), stop))
+	return tea.Batch(m.saveState(), tea.Sequence(m.showSelected(), stop))
 }
 
 func (m *model) refreshPreview() tea.Cmd {
@@ -1090,7 +1095,7 @@ func (m *model) apply(msg refreshMsg) tea.Cmd {
 			cmds = append(cmds, m.showSelected())
 		}
 	}
-	if m.dialogOpen() {
+	if m.dialogOpen() && m.rename == nil {
 		cmds = append(cmds, m.zoom(true))
 	}
 	cmds = append(cmds, m.fetchPRs())
@@ -1101,8 +1106,25 @@ func (m *model) rebuild() (moved bool) {
 	before := m.selected
 	m.in.State = m.state
 	m.active, m.suspended = deck.Build(m.in)
+	if d := m.rename; d != nil {
+		keepOrder(m.active, d.order)
+		keepOrder(m.suspended, d.order)
+	}
 	m.syncCursor()
+	if m.rename != nil && !slices.ContainsFunc(m.shown(), func(r deck.Row) bool { return r.SessionID == m.rename.id }) {
+		m.rename = nil
+	}
 	return m.selected != before
+}
+
+func keepOrder(rows []deck.Row, order []string) {
+	pos := func(r deck.Row) int {
+		if i := slices.Index(order, r.SessionID); i >= 0 {
+			return i
+		}
+		return len(order)
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return pos(rows[i]) < pos(rows[j]) })
 }
 
 func (m *model) syncCursor() {
