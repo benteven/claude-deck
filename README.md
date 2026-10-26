@@ -74,6 +74,7 @@ In the list:
 | `s` | Suspend: rename it, then stop it |
 | `r` | Rename |
 | `R` | Restart the session in place, for example after Claude Code updates |
+| `c` | Hand off: Claude writes its state to a note, the deck runs `/clear`, then Claude reads the note back |
 | `t` | Take over a session running in another terminal |
 | `o` | Open the row's pull requests |
 | `a` | List the row's artifacts; Enter opens one |

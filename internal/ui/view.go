@@ -77,6 +77,8 @@ func (m *model) View() tea.View {
 		content = m.del.view(w, h)
 	case m.restart != nil:
 		content = m.restart.view(w, h)
+	case m.handoff != nil:
+		content = m.handoff.view(w, h)
 	default:
 		content = m.listView(w, h)
 	}
@@ -460,6 +462,7 @@ func (m *model) listHint(w int) string {
 	text := strings.Join(fitted, "\n")
 	if r, ok := m.current(); ok && r.Kind == deck.Live {
 		text = addItem(text, "R restart", w)
+		text = addItem(text, "c handoff", w)
 	}
 	if r, ok := m.current(); ok && len(visiblePRs(r.Summary.PRs, m.prState)) > 0 {
 		text = addItem(text, "o open PR", w)
