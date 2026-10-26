@@ -15,7 +15,7 @@ const (
 	BgSession   = "=deck-bg"
 	ListPane    = DeckSession + ":main.0"
 	Slot        = DeckSession + ":main.1"
-	ListWidth   = 36
+	WidthOption = "@deck-list-width"
 	NextKey     = "\ue000"
 	PrevKey     = "\ue001"
 )
@@ -87,7 +87,7 @@ func (c Client) run(steps ...[]string) error {
 	return nil
 }
 
-func (c Client) EnsureLayout(exe string) error {
+func (c Client) EnsureLayout(exe string, width int) error {
 	quoted := ShellQuote(exe)
 	if !c.hasSession(BgSession) {
 		err := c.run(
@@ -117,10 +117,17 @@ func (c Client) EnsureLayout(exe string) error {
 			return err
 		}
 	}
-	return c.run(
-		[]string{"resize-pane", "-t", ListPane, "-x", strconv.Itoa(ListWidth)},
-		[]string{"select-pane", "-t", ListPane},
-	)
+	if err := c.SetListWidth(width); err != nil {
+		return err
+	}
+	_, err := c.Run("select-pane", "-t", ListPane)
+	return err
+}
+
+func (c Client) SetListWidth(width int) error {
+	w := strconv.Itoa(width)
+	_, err := c.Run("set-option", "-g", WidthOption, w, ";", "resize-pane", "-t", ListPane, "-x", w)
+	return err
 }
 
 func ShellQuote(s string) string {
@@ -161,7 +168,7 @@ func WriteConf(path string, cfg store.Config) error {
 		`set -as terminal-features ",*:RGB"`,
 		`set -as terminal-features ",xterm*:extkeys:hyperlinks"`,
 		"set -g status off",
-		fmt.Sprintf(`set-hook -g window-resized "resize-pane -t =deck:main.0 -x %d"`, ListWidth),
+		`set-hook -g window-resized 'run-shell -C "resize-pane -t =deck:main.0 -x #{@deck-list-width}"'`,
 	)
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
 }

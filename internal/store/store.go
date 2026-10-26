@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -13,6 +14,60 @@ import (
 type Config struct {
 	Prefix     string   `json:"prefix"`
 	ClaudeArgs []string `json:"claude_args"`
+	ListWidth  int      `json:"list_width"`
+}
+
+const (
+	DefaultListWidth = 36
+	MinListWidth     = 24
+	MaxListWidth     = 100
+)
+
+func ClampListWidth(w int) int {
+	return min(max(w, MinListWidth), MaxListWidth)
+}
+
+func SaveListWidth(dir string, w int) error {
+	path := filepath.Join(dir, "config.json")
+	raw := map[string]json.RawMessage{}
+	if err := readJSON(path, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		raw = map[string]json.RawMessage{}
+	}
+	raw["list_width"] = json.RawMessage(strconv.Itoa(w))
+	data, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	mode := os.FileMode(0o644)
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+		if info, err := os.Stat(path); err == nil {
+			mode = info.Mode().Perm()
+		}
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".config-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 type ActiveEntry struct {
@@ -40,13 +95,17 @@ func readJSON(path string, v any) error {
 }
 
 func LoadConfig(dir string) (Config, error) {
-	c := Config{Prefix: "C-b"}
+	c := Config{Prefix: "C-b", ListWidth: DefaultListWidth}
 	if err := readJSON(filepath.Join(dir, "config.json"), &c); err != nil {
-		return Config{Prefix: "C-b"}, err
+		return Config{Prefix: "C-b", ListWidth: DefaultListWidth}, err
 	}
 	if c.Prefix == "" || strings.EqualFold(c.Prefix, "C-j") || strings.EqualFold(c.Prefix, "C-k") {
 		c.Prefix = "C-b"
 	}
+	if c.ListWidth == 0 {
+		c.ListWidth = DefaultListWidth
+	}
+	c.ListWidth = ClampListWidth(c.ListWidth)
 	return c, nil
 }
 

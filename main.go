@@ -93,9 +93,11 @@ func launch() error {
 		}
 	}
 	if !client.HasLayout() {
-		if err := client.EnsureLayout(exe); err != nil {
+		if err := client.EnsureLayout(exe, cfg.ListWidth); err != nil {
 			return err
 		}
+	} else if err := client.SetListWidth(cfg.ListWidth); err != nil {
+		return err
 	}
 	bin, err := exec.LookPath("tmux")
 	if err != nil {

@@ -57,6 +57,7 @@ From anywhere:
 | `ctrl-b` | Focus the list |
 | `ctrl-j` / `ctrl-k` | Next or previous session |
 | `ctrl-b 1` ... `ctrl-b 9` | Go to session 1 to 9 |
+| `ctrl-b <` / `ctrl-b >` | Narrower or wider list |
 | `ctrl-b ctrl-b`, `ctrl-b ctrl-j`, `ctrl-b ctrl-k` | Send that key to Claude Code |
 
 In the list:
@@ -87,7 +88,7 @@ claude-deck runs its own tmux server (socket `claude-deck`), so your own tmux se
 
 Session data comes from Claude Code's own files in `~/.claude`, read only. The one exception is `d`, which moves a transcript to the Trash. Sessions started by the app get hooks through `claude --settings`, which mark when a session waits for you; your global Claude Code settings are not changed.
 
-App state lives in `~/.config/claude-deck`. Set `"prefix"` in `config.json` to use another key than `ctrl-b`, and `"claude_args"` to pass extra flags to every session.
+App state lives in `~/.config/claude-deck`. Set `"prefix"` in `config.json` to use another key than `ctrl-b`, `"claude_args"` to pass extra flags to every session, and `"list_width"` (24 to 100, default 36) for the list width. Drag the border or press `ctrl-b <` and `ctrl-b >` to change it and keep the new width.
 
 ## License
 
