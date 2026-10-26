@@ -244,6 +244,8 @@ type model struct {
 	quit     *quitDialog
 	del      *deleteDialog
 	restart  *restartDialog
+	handoff  *handoffDialog
+	handoffs map[string]*pendingHandoff
 	gone     map[string]bool
 	quitting bool
 	inDialog bool
@@ -436,6 +438,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.restart != nil {
 			return m, m.restartKey(msg)
 		}
+		if m.handoff != nil {
+			return m, m.handoffKey(msg)
+		}
 		if m.picker != nil {
 			return m, m.pickerKey(msg)
 		}
@@ -531,6 +536,11 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		m.restart = &restartDialog{row: r}
 		return m.zoom(true)
+	case "c":
+		if r, ok := m.current(); ok {
+			return m.startHandoff(r)
+		}
+		return nil
 	case "o":
 		if r, ok := m.current(); ok {
 			return m.openPRs(r)
@@ -560,7 +570,7 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (m *model) dialogOpen() bool {
-	return m.prompt != nil || m.picker != nil || m.rename != nil || m.arts != nil || m.takeover != nil || m.quit != nil || m.del != nil || m.restart != nil
+	return m.prompt != nil || m.picker != nil || m.rename != nil || m.arts != nil || m.takeover != nil || m.quit != nil || m.del != nil || m.restart != nil || m.handoff != nil
 }
 
 func (m *model) liveRows() []deck.Row {
@@ -1118,6 +1128,9 @@ func (m *model) followClear(msg refreshMsg) tea.Cmd {
 		if m.restart != nil && m.restart.row.PaneID == p.ID {
 			m.restart = nil
 		}
+		if m.handoff != nil && m.handoff.row.PaneID == p.ID {
+			m.handoff = nil
+		}
 		if !m.dialogOpen() {
 			cmds = append(cmds, m.zoom(false))
 		}
@@ -1193,7 +1206,7 @@ func (m *model) apply(msg refreshMsg) tea.Cmd {
 	if m.dialogOpen() && m.rename == nil && m.arts == nil {
 		cmds = append(cmds, m.zoom(true))
 	}
-	cmds = append(cmds, m.fetchPRs())
+	cmds = append(cmds, m.fetchPRs(), m.advanceHandoffs(time.Now()))
 	return tea.Batch(cmds...)
 }
 
