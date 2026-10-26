@@ -11,6 +11,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/benteven/claude-deck/internal/deck"
@@ -185,6 +186,8 @@ func (p *picker) view(w, h int, focused bool) string {
 	return page(body, hint, h)
 }
 
+var reverse = lipgloss.NewStyle().Reverse(true)
+
 type renameDialog struct {
 	input    textinput.Model
 	id, pane string
@@ -192,14 +195,15 @@ type renameDialog struct {
 	suspend  bool
 	busy     bool
 	fresh    bool
+	order    []string
+	kind     deck.Kind
 }
 
-func newRenameDialog(r deck.Row, suspend bool, width int) *renameDialog {
-	d := &renameDialog{input: textinput.New(), id: r.SessionID, pane: r.PaneID, name: r.Name, suspend: suspend, busy: r.Busy, fresh: true}
-	d.input.Prompt = "> "
+func newRenameDialog(r deck.Row, suspend bool, order []string) *renameDialog {
+	d := &renameDialog{input: textinput.New(), id: r.SessionID, pane: r.PaneID, name: r.Name, suspend: suspend, busy: r.Busy, fresh: true, order: order, kind: r.Kind}
+	d.input.Prompt = ""
 	d.input.SetValue(r.Name)
 	d.input.CursorEnd()
-	d.input.SetWidth(max(width-4, 1))
 	return d
 }
 
@@ -208,7 +212,7 @@ func (m *model) renameKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
 		m.rename = nil
-		return m.zoom(false)
+		return nil
 	case "enter":
 		m.rename = nil
 		return m.confirmRename(d)
@@ -222,17 +226,31 @@ func (m *model) renameKey(msg tea.KeyPressMsg) tea.Cmd {
 	return cmd
 }
 
-func (d *renameDialog) view(w, h int) string {
-	verb := "Rename"
+func (d *renameDialog) line(w int, focused bool) string {
+	bar := selectionBar(true, focused)
+	d.input.SetWidth(max(w-3, 1))
+	if d.fresh {
+		return ansi.Truncate(bar+reverse.Render(ansi.Truncate(d.name, max(w-2, 1), "…")), w, "")
+	}
+	return ansi.Truncate(bar+d.input.View(), w, "")
+}
+
+func (d *renameDialog) hint(w int) string {
+	text := "Rename: enter to save, esc to cancel"
 	if d.suspend {
-		verb = "Suspend"
+		text = "Suspend: enter to confirm, esc to cancel"
 	}
-	title := white.Render(ansi.Truncate(verb+` "`+d.name+`"`, w, "…"))
-	body := []string{title, gray.Render(ansi.Truncate("Rename so you find it again (enter keeps it)", w, "…")), d.input.View()}
+	if ansi.StringWidth(text) > w {
+		text = strings.Replace(text, ", ", ",\n", 1)
+	}
+	lines := strings.Split(text, "\n")
+	for i, l := range lines {
+		lines[i] = gray.Render(ansi.Truncate(l, w, "…"))
+	}
 	if d.suspend && d.busy {
-		body = append(body, "", yellow.Render(ansi.Truncate("This session is busy. Suspending stops the turn in progress.", w, "…")))
+		lines = append(lines, yellow.Render(ansi.Truncate("Busy: suspending stops the turn", w, "…")))
 	}
-	return page(body, gray.Render(ansi.Truncate("enter confirm  esc cancel", w, "")), h)
+	return strings.Join(lines, "\n")
 }
 
 type resumePrompt struct{ count int }
