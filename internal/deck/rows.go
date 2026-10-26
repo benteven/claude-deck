@@ -75,7 +75,7 @@ func Build(in Inputs) (active, suspended []Row) {
 			Summary:         sum,
 			Waiting:         ev.Waiting(),
 			Busy:            isLive && ls.Status == "busy",
-			LastInteraction: latest(e.LastInteraction, ev.PromptAt, sum.PromptedAt),
+			LastInteraction: latest(e.LastInteraction, sum.PromptedAt),
 			Agents:          cleanAll(in.Agents[e.SessionID]),
 			Num:             e.Num,
 		}
@@ -102,7 +102,7 @@ func Build(in Inputs) (active, suspended []Row) {
 			Summary:         sum,
 			Waiting:         ls.Status == "idle",
 			Busy:            ls.Status == "busy",
-			LastInteraction: latest(promptedAt(sum), in.Events[ls.SessionID].PromptAt),
+			LastInteraction: promptedAt(sum),
 			Agents:          cleanAll(in.Agents[ls.SessionID]),
 		})
 	}

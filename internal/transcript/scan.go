@@ -187,7 +187,12 @@ type record struct {
 	Cwd        string `json:"cwd"`
 	GitBranch  string `json:"gitBranch"`
 	Timestamp  string `json:"timestamp"`
-	Message    struct {
+	Origin     origin `json:"origin"`
+	Attachment struct {
+		Type   string `json:"type"`
+		Origin origin `json:"origin"`
+	} `json:"attachment"`
+	Message struct {
 		Model string `json:"model"`
 		Usage struct {
 			Input         int `json:"input_tokens"`
@@ -195,6 +200,20 @@ type record struct {
 			CacheCreation int `json:"cache_creation_input_tokens"`
 		} `json:"usage"`
 	} `json:"message"`
+}
+
+type origin struct {
+	Kind string `json:"kind"`
+}
+
+func (r record) human() bool {
+	switch r.Type {
+	case "user":
+		return r.Origin.Kind == "human"
+	case "attachment":
+		return r.Attachment.Type == "queued_command" && r.Attachment.Origin.Kind == "human"
+	}
+	return false
 }
 
 func scan(path string, e *entry) error {
@@ -235,7 +254,7 @@ func scan(path string, e *entry) error {
 		}
 		if bytes.Contains(line, humanMark) {
 			var rec record
-			if json.Unmarshal(line, &rec) == nil && rec.Type == "user" {
+			if json.Unmarshal(line, &rec) == nil && rec.human() {
 				if t, err := time.Parse(time.RFC3339, rec.Timestamp); err == nil {
 					e.Summary.PromptedAt = t
 				}

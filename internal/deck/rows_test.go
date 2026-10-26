@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benteven/claude-deck/internal/events"
 	"github.com/benteven/claude-deck/internal/store"
 	"github.com/benteven/claude-deck/internal/transcript"
 )
@@ -29,8 +28,7 @@ func TestActiveOrder(t *testing.T) {
 			{SessionID: "c", LastInteraction: t0.Add(-2 * time.Hour)},
 		}},
 		Panes:     map[string]string{"a": "%1", "b": "%2", "c": "%3"},
-		Events:    map[string]events.State{"b": {Event: "UserPromptSubmit", PromptAt: t0.Add(time.Minute)}},
-		Summaries: map[string]transcript.Summary{"a": {LastUsed: t0.Add(3 * time.Minute)}, "c": {PromptedAt: t0.Add(2 * time.Minute)}},
+		Summaries: map[string]transcript.Summary{"a": {LastUsed: t0.Add(3 * time.Minute)}, "b": {PromptedAt: t0.Add(time.Minute)}, "c": {PromptedAt: t0.Add(2 * time.Minute)}},
 	}
 	active, _ := Build(in)
 	assert.Equal(t, []string{"c", "b", "a"}, ids(active))
