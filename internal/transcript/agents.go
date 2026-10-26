@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+type Agent struct {
+	Label string
+	Path  string
+}
+
 type agentMeta struct {
 	AgentType   string `json:"agentType"`
 	Description string `json:"description"`
@@ -35,20 +40,22 @@ func (m agentMeta) label() string {
 	return cmp.Or(m.Description, m.AgentType, "subagent")
 }
 
-func AgentDescriptions(transcriptPath string, ids []string) []string {
+func AgentDescriptions(transcriptPath string, ids []string) []Agent {
 	dir := agentsDir(transcriptPath)
-	out := make([]string, 0, len(ids))
+	out := make([]Agent, 0, len(ids))
 	for _, id := range ids {
 		var m agentMeta
+		var path string
 		if dir != "" && id != "" && id == filepath.Base(id) {
 			m, _ = readMeta(dir, id)
+			path = filepath.Join(dir, "agent-"+id+".jsonl")
 		}
-		out = append(out, m.label())
+		out = append(out, Agent{Label: m.label(), Path: path})
 	}
 	return out
 }
 
-func RecentAgents(transcriptPath string, since time.Time) []string {
+func RecentAgents(transcriptPath string, since time.Time) []Agent {
 	dir := agentsDir(transcriptPath)
 	if dir == "" {
 		return nil
@@ -57,7 +64,7 @@ func RecentAgents(transcriptPath string, since time.Time) []string {
 	if err != nil {
 		return nil
 	}
-	var out []string
+	var out []Agent
 	for _, e := range entries {
 		name := e.Name()
 		if !strings.HasPrefix(name, "agent-") || !strings.HasSuffix(name, ".jsonl") {
@@ -70,7 +77,7 @@ func RecentAgents(transcriptPath string, since time.Time) []string {
 		}
 		m, _ := readMeta(dir, id)
 		if !m.Finished {
-			out = append(out, m.label())
+			out = append(out, Agent{Label: m.label(), Path: filepath.Join(dir, name)})
 		}
 	}
 	return out

@@ -113,9 +113,9 @@ func (m *model) layout(w, h int) (blocks [][]string, hint string, room int) {
 			blocks = append(blocks, suspendedLines(r, w, now, i == m.cursor, m.focused, m.prState))
 		case r.Kind == deck.Elsewhere && !header:
 			header = true
-			blocks = append(blocks, append([]string{gray.Render("Elsewhere")}, rowLines(r, w, i == m.cursor, m.focused, m.prState)...))
+			blocks = append(blocks, append([]string{gray.Render("Elsewhere")}, rowLines(r, w, i == m.cursor, m.focused, m.agentAt(i, r), m.prState)...))
 		default:
-			blocks = append(blocks, rowLines(r, w, i == m.cursor, m.focused, m.prState))
+			blocks = append(blocks, rowLines(r, w, i == m.cursor, m.focused, m.agentAt(i, r), m.prState))
 		}
 		if m.rename != nil && r.SessionID == m.rename.id {
 			last := blocks[len(blocks)-1]
@@ -266,7 +266,7 @@ func selectionBar(selected, focused bool) string {
 	}
 }
 
-func rowLines(r deck.Row, w int, selected, focused bool, prState func(string) string) []string {
+func rowLines(r deck.Row, w int, selected, focused bool, agent int, prState func(string) string) []string {
 	if r.Kind == deck.Stale {
 		return staleLines(r, w, selected, focused, prState)
 	}
@@ -295,16 +295,20 @@ func rowLines(r deck.Row, w int, selected, focused bool, prState func(string) st
 	}
 
 	for i, l := range lines {
-		lines[i] = ansi.Truncate(bar+l, w, "")
+		b := bar
+		if agent >= 0 {
+			b = selectionBar(i == 2+agent, focused)
+		}
+		lines[i] = ansi.Truncate(b+l, w, "")
 	}
 	return lines
 }
 
-func agentLines(agents []string, width int, colored bool) []string {
+func agentLines(agents []transcript.Agent, width int, colored bool) []string {
 	shown := agents[:min(len(agents), agentLimit)]
 	var out []string
 	for _, a := range shown {
-		arrow, desc := "↳", ansi.Truncate(a, max(width-4, 1), "…")
+		arrow, desc := "↳", ansi.Truncate(a.Label, max(width-4, 1), "…")
 		if colored {
 			arrow, desc = gray.Render(arrow), white.Render(desc)
 		}
@@ -469,6 +473,13 @@ func (m *model) listHint(w int) string {
 	}
 	if r, ok := m.current(); ok && len(r.Summary.Artifacts) > 0 {
 		text = addItem(text, "a artifacts", w)
+	}
+	if m.mode == modeActive {
+		if m.agentMode {
+			text = addItem(text, "g agents off", w)
+		} else {
+			text = addItem(text, "g agents", w)
+		}
 	}
 	text = addItem(text, "U upgrade", w)
 	return text

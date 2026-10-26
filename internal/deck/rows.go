@@ -36,7 +36,7 @@ type Row struct {
 	Busy            bool
 	Remote          bool
 	LastInteraction time.Time
-	Agents          []string
+	Agents          []transcript.Agent
 	Num             int
 }
 
@@ -47,7 +47,7 @@ type Inputs struct {
 	Events    map[string]events.State
 	Files     []transcript.File
 	Summaries map[string]transcript.Summary
-	Agents    map[string][]string
+	Agents    map[string][]transcript.Agent
 }
 
 func Build(in Inputs) (active, suspended []Row) {
@@ -78,7 +78,7 @@ func Build(in Inputs) (active, suspended []Row) {
 			Busy:            isLive && ls.Status == "busy",
 			Remote:          isLive && ls.BridgeID != "",
 			LastInteraction: latest(e.LastInteraction, sum.PromptedAt),
-			Agents:          cleanAll(in.Agents[e.SessionID]),
+			Agents:          cleanAgents(in.Agents[e.SessionID]),
 			Num:             e.Num,
 		}
 		if r.PaneID != "" {
@@ -106,7 +106,7 @@ func Build(in Inputs) (active, suspended []Row) {
 			Busy:            ls.Status == "busy",
 			Remote:          ls.BridgeID != "",
 			LastInteraction: promptedAt(sum),
-			Agents:          cleanAll(in.Agents[ls.SessionID]),
+			Agents:          cleanAgents(in.Agents[ls.SessionID]),
 		})
 	}
 	sort.SliceStable(active, func(i, j int) bool {
@@ -207,11 +207,11 @@ func latest(ts ...time.Time) time.Time {
 	return out
 }
 
-func cleanAll(texts []string) []string {
-	var out []string
-	for _, t := range texts {
-		if c := clean(t); c != "" {
-			out = append(out, c)
+func cleanAgents(agents []transcript.Agent) []transcript.Agent {
+	var out []transcript.Agent
+	for _, a := range agents {
+		if a.Label = clean(a.Label); a.Label != "" {
+			out = append(out, a)
 		}
 	}
 	return out

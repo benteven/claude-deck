@@ -75,6 +75,7 @@ In the list:
 | `r` | Rename |
 | `R` | Restart the session in place, for example after Claude Code updates |
 | `c` | Hand off: Claude writes its state to a note, the deck runs `/clear`, then Claude reads the note back |
+| `g` | Agent mode: `j`/`k` also step through subagents and show the live subagent transcript; Enter opens the parent session |
 | `t` | Take over a session running in another terminal |
 | `o` | Open the row's pull requests |
 | `a` | List the row's artifacts; Enter opens one |

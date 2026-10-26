@@ -62,6 +62,9 @@ func (m *model) click(ms tea.Mouse) tea.Cmd {
 	if h.count {
 		return tea.Batch(m.selectIndex(h.row), m.openArtifacts(m.shown()[h.row]))
 	}
+	if m.agentMode && h.agent >= 0 && h.agent < len(visibleAgents(m.shown()[h.row])) {
+		return m.selectAgent(h.row, h.agent)
+	}
 	if r := m.shown()[h.row]; r.Kind == deck.Live {
 		m.cursor, m.selected = h.row, r.SessionID
 		return m.enter()
@@ -74,6 +77,7 @@ type hit struct {
 	url      string
 	artifact string
 	count    bool
+	agent    int
 }
 
 func (m *model) clickTab(x int) tea.Cmd {
@@ -117,7 +121,7 @@ func (m *model) hitAt(x, y int) (hit, bool) {
 		}
 		for j, text := range blocks[i] {
 			if line == y {
-				return hit{row: i, url: m.linkAt(rows[i].Summary.PRs, text, x), artifact: m.artifactAt(text), count: j >= extra && artifactCountAt(text, x)}, true
+				return hit{row: i, url: m.linkAt(rows[i].Summary.PRs, text, x), artifact: m.artifactAt(text), count: j >= extra && artifactCountAt(text, x), agent: j - extra}, true
 			}
 			line++
 		}
