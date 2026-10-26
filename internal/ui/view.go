@@ -356,7 +356,7 @@ func fitItems(items []string, width int) string {
 func visiblePRs(prs []transcript.PRLink, prState func(string) string) []transcript.PRLink {
 	var out []transcript.PRLink
 	for _, pr := range prs {
-		if s := prState(pr.URL); s != "merged" && s != "closed" {
+		if s := prState(pr.URL); s == "open" || s == "draft" || s == "unknown" {
 			out = append(out, pr)
 		}
 	}

@@ -224,6 +224,7 @@ type model struct {
 	hint          string
 	err           error
 
+	noGH    bool
 	prs     map[string]*prEntry
 	prSem   chan struct{}
 	prSaver *prSaver
@@ -284,6 +285,7 @@ func Run() error {
 		prs:        loadedPRs(saved),
 		prSem:      make(chan struct{}, prParallel),
 		prSaver:    &prSaver{},
+		noGH:       !hasGH(),
 	}
 	_, err = tea.NewProgram(m).Run()
 	if serr := reader.Save(); err == nil {
@@ -1344,7 +1346,15 @@ func (m *model) resume(r deck.Row) tea.Cmd {
 	}
 }
 
+func hasGH() bool {
+	_, err := exec.LookPath("gh")
+	return err == nil
+}
+
 func (m *model) fetchPRs() tea.Cmd {
+	if m.noGH {
+		return nil
+	}
 	now := time.Now()
 	var cmds []tea.Cmd
 	for _, r := range m.visibleRows() {
@@ -1371,8 +1381,11 @@ func (m *model) fetchPRs() tea.Cmd {
 }
 
 func (m *model) prState(url string) string {
-	if e := m.prs[url]; e != nil {
+	if e := m.prs[url]; e != nil && e.state != "" {
 		return e.state
+	}
+	if m.noGH {
+		return "unknown"
 	}
 	return ""
 }
