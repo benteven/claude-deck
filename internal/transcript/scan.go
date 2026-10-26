@@ -32,6 +32,7 @@ type Summary struct {
 	PRs           []PRLink
 	Artifacts     []string
 	LastUsed      time.Time
+	PromptedAt    time.Time
 }
 
 func (s Summary) ContextWindow() int {
@@ -163,6 +164,7 @@ var (
 	lastPromptMark = []byte(`"type":"last-prompt"`)
 	prLinkMark     = []byte(`"type":"pr-link"`)
 	assistantMark  = []byte(`"type":"assistant"`)
+	humanMark      = []byte(`"kind":"human"`)
 	artifactMark   = []byte(`/artifact/`)
 	artifactRe     = regexp.MustCompile(`https://claude\.ai/(?:code/)?artifact/[A-Za-z0-9-]+`)
 )
@@ -223,6 +225,14 @@ func scan(path string, e *entry) error {
 				candidates = candidates[1:]
 			}
 			candidates = append(candidates, string(line))
+		}
+		if bytes.Contains(line, humanMark) {
+			var rec record
+			if json.Unmarshal(line, &rec) == nil && rec.Type == "user" {
+				if t, err := time.Parse(time.RFC3339, rec.Timestamp); err == nil {
+					e.Summary.PromptedAt = t
+				}
+			}
 		}
 		apply(e, line)
 	}

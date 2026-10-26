@@ -75,7 +75,7 @@ func Build(in Inputs) (active, suspended []Row) {
 			Summary:         sum,
 			Waiting:         ev.Waiting(),
 			Busy:            isLive && ls.Status == "busy",
-			LastInteraction: latest(e.LastInteraction, ev.PromptAt, sum.LastUsed),
+			LastInteraction: latest(e.LastInteraction, ev.PromptAt, sum.PromptedAt),
 			Agents:          cleanAll(in.Agents[e.SessionID]),
 			Num:             e.Num,
 		}
@@ -102,7 +102,7 @@ func Build(in Inputs) (active, suspended []Row) {
 			Summary:         sum,
 			Waiting:         ls.Status == "idle",
 			Busy:            ls.Status == "busy",
-			LastInteraction: latest(sum.LastUsed, in.Events[ls.SessionID].PromptAt),
+			LastInteraction: latest(promptedAt(sum), in.Events[ls.SessionID].PromptAt),
 			Agents:          cleanAll(in.Agents[ls.SessionID]),
 		})
 	}
@@ -185,6 +185,13 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+func promptedAt(sum transcript.Summary) time.Time {
+	if sum.PromptedAt.IsZero() {
+		return sum.LastUsed
+	}
+	return sum.PromptedAt
 }
 
 func latest(ts ...time.Time) time.Time {
