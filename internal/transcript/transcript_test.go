@@ -40,6 +40,7 @@ func TestSummary(t *testing.T) {
 	s, err := r.Summary("testdata/session.jsonl")
 	require.NoError(t, err)
 	assert.Equal(t, "Add a billing page", s.AITitle)
+	assert.Equal(t, "billing", s.Title)
 	assert.Equal(t, "develop", s.Branch)
 	assert.Equal(t, "/Users/dev/Projects/shop", s.Cwd)
 	assert.Equal(t, 205848, s.ContextTokens)

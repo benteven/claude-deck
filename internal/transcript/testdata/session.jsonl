@@ -9,4 +9,5 @@ this line is not json
 {"type":"pr-link","sessionId":"aaaaaaaa-0000-4000-8000-000000000001","prNumber":4737,"prUrl":"https://github.com/example/repo/pull/4737","prRepository":"example/repo","timestamp":"2026-10-25T20:34:00.000Z"}
 {"type":"pr-link","sessionId":"aaaaaaaa-0000-4000-8000-000000000001","prNumber":4744,"prUrl":"https://github.com/example/repo/pull/4744","prRepository":"example/repo","timestamp":"2026-10-25T20:35:00.000Z"}
 {"type":"ai-title","aiTitle":"Add a billing page","sessionId":"aaaaaaaa-0000-4000-8000-000000000001"}
+{"type":"custom-title","customTitle":"billing","sessionId":"aaaaaaaa-0000-4000-8000-000000000001"}
 {"type":"last-prompt","lastPrompt":"second prompt","leafUuid":"22222222-2222-4222-8222-222222222222","sessionId":"aaaaaaaa-0000-4000-8000-000000000001"}

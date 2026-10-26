@@ -25,6 +25,7 @@ type Summary struct {
 	Cwd           string
 	Branch        string
 	Model         string
+	Title         string
 	AITitle       string
 	LastPrompt    string
 	ContextTokens int
@@ -74,7 +75,10 @@ func ValidID(id string) bool {
 	return id != "" && id == filepath.Base(id) && !strings.HasPrefix(id, ".")
 }
 
+const cacheVersion = 2
+
 type entry struct {
+	Version int
 	Size    int64
 	ModTime time.Time
 	Offset  int64
@@ -132,8 +136,8 @@ func (r *Reader) Summary(path string) (Summary, error) {
 		return Summary{}, err
 	}
 	e := r.entries[path]
-	if e == nil || info.Size() < e.Offset || info.Size() < e.Size || info.ModTime().Before(e.ModTime) {
-		e = &entry{}
+	if e == nil || e.Version != cacheVersion || info.Size() < e.Offset || info.Size() < e.Size || info.ModTime().Before(e.ModTime) {
+		e = &entry{Version: cacheVersion}
 	}
 	if e.Offset < info.Size() {
 		if err := scan(path, e); err != nil {
@@ -155,6 +159,7 @@ const maxCandidates = 8
 
 var (
 	aiTitleMark    = []byte(`"type":"ai-title"`)
+	titleMark      = []byte(`"type":"custom-title"`)
 	lastPromptMark = []byte(`"type":"last-prompt"`)
 	prLinkMark     = []byte(`"type":"pr-link"`)
 	assistantMark  = []byte(`"type":"assistant"`)
@@ -165,6 +170,7 @@ var (
 type record struct {
 	Type       string `json:"type"`
 	AITitle    string `json:"aiTitle"`
+	Title      string `json:"customTitle"`
 	LastPrompt string `json:"lastPrompt"`
 	PRNumber   int    `json:"prNumber"`
 	PRURL      string `json:"prUrl"`
@@ -230,6 +236,11 @@ func apply(e *entry, line []byte) {
 		var rec record
 		if json.Unmarshal(line, &rec) == nil && rec.Type == "ai-title" {
 			e.Summary.AITitle = rec.AITitle
+		}
+	case bytes.Contains(line, titleMark):
+		var rec record
+		if json.Unmarshal(line, &rec) == nil && rec.Type == "custom-title" {
+			e.Summary.Title = rec.Title
 		}
 	case bytes.Contains(line, lastPromptMark):
 		var rec record
