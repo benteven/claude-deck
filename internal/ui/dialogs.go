@@ -436,11 +436,12 @@ func (m *model) restartKey(msg tea.KeyPressMsg) tea.Cmd {
 		delete(m.in.Panes, r.SessionID)
 		m.rebuild()
 		ops := m.ops
+		name := m.state.Names[r.SessionID]
 		run := func() tea.Msg {
 			if err := ops.Stop(r.PaneID, r.Busy); err != nil {
 				return restartedMsg{row: r, err: err, stopFailed: true}
 			}
-			pane, err := ops.Start(r.Cwd, r.SessionID, r.Name, true)
+			pane, err := ops.Start(r.Cwd, r.SessionID, name, true)
 			return restartedMsg{row: r, pane: pane, err: err}
 		}
 		return tea.Sequence(m.zoom(false), m.showSelected(), run)

@@ -144,7 +144,7 @@ func name(state store.State, entryName string, ls live.Session, id string, sum t
 		liveName = ls.Name
 	}
 	var picked string
-	for _, c := range []string{state.Names[id], entryName, liveName, sum.AITitle} {
+	for _, c := range []string{state.Names[id], liveName, sum.Title, entryName, sum.AITitle} {
 		if clean(c) != "" {
 			picked = c
 			break

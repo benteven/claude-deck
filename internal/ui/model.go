@@ -1272,8 +1272,9 @@ func (m *model) start(cwd string) tea.Cmd {
 
 func (m *model) resume(r deck.Row) tea.Cmd {
 	ops := m.ops
+	name := m.state.Names[r.SessionID]
 	return func() tea.Msg {
-		pane, err := ops.Start(r.Cwd, r.SessionID, r.Name, true)
+		pane, err := ops.Start(r.Cwd, r.SessionID, name, true)
 		return startedMsg{id: r.SessionID, cwd: r.Cwd, name: r.Name, pane: pane, err: err}
 	}
 }
