@@ -868,13 +868,7 @@ func (m *model) enter() tea.Cmd {
 		m.hint = "running in another terminal"
 		return nil
 	case deck.Live:
-		for i := range m.state.Active {
-			if m.state.Active[i].SessionID == r.SessionID {
-				m.state.Active[i].LastInteraction = time.Now()
-			}
-		}
-		m.rebuild()
-		return tea.Batch(m.saveState(), tea.Sequence(m.show(r.PaneID, "", false), m.focus(tmux.Slot)))
+		return tea.Sequence(m.show(r.PaneID, "", false), m.focus(tmux.Slot))
 	case deck.Suspended, deck.Stale:
 		if m.resuming[r.SessionID] {
 			return nil
