@@ -141,14 +141,33 @@ func Claim(active []ActiveEntry, want int) int {
 }
 
 func (s State) Save(dir string) error {
-	data, err := json.MarshalIndent(s, "", "  ")
+	return writeJSON(dir, "state.json", s)
+}
+
+type PRState struct {
+	State   string    `json:"state"`
+	Checked time.Time `json:"checked"`
+}
+
+func LoadPRs(dir string) (map[string]PRState, error) {
+	prs := map[string]PRState{}
+	err := readJSON(filepath.Join(dir, "prs.json"), &prs)
+	return prs, err
+}
+
+func SavePRs(dir string, prs map[string]PRState) error {
+	return writeJSON(dir, "prs.json", prs)
+}
+
+func writeJSON(dir, name string, v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".state-*")
+	tmp, err := os.CreateTemp(dir, "."+name+"-*")
 	if err != nil {
 		return err
 	}
@@ -160,5 +179,5 @@ func (s State) Save(dir string) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), filepath.Join(dir, "state.json"))
+	return os.Rename(tmp.Name(), filepath.Join(dir, name))
 }
