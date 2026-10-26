@@ -29,9 +29,17 @@ func (m *model) wheel(ms tea.Mouse) tea.Cmd {
 func (m *model) click(ms tea.Mouse) tea.Cmd {
 	if m.rename != nil {
 		if ms.Button == tea.MouseLeft {
-			if row, _, ok := m.hitAt(ms.X, ms.Y); !ok || row != m.cursor {
+			if h, ok := m.hitAt(ms.X, ms.Y); !ok || h.row != m.cursor {
 				m.rename = nil
 			}
+		}
+		return nil
+	}
+	if m.arts != nil && ms.Button == tea.MouseLeft {
+		h, _ := m.hitAt(ms.X, ms.Y)
+		m.arts = nil
+		if h.artifact != "" {
+			return openURLs([]string{h.artifact})
 		}
 		return nil
 	}
@@ -41,16 +49,27 @@ func (m *model) click(ms tea.Mouse) tea.Cmd {
 	if ms.Y == 0 {
 		return m.clickTab(ms.X)
 	}
-	row, url, ok := m.hitAt(ms.X, ms.Y)
+	h, ok := m.hitAt(ms.X, ms.Y)
 	if !ok {
 		return nil
 	}
 	m.hint = ""
 	m.err = nil
-	if url != "" {
-		return openURLs([]string{url})
+	if h.url != "" {
+		return openURLs([]string{h.url})
 	}
-	return m.selectIndex(row)
+	cmd := m.selectIndex(h.row)
+	if h.count {
+		return tea.Batch(cmd, m.openArtifacts(m.shown()[h.row]))
+	}
+	return cmd
+}
+
+type hit struct {
+	row      int
+	url      string
+	artifact string
+	count    bool
 }
 
 func (m *model) clickTab(x int) tea.Cmd {
@@ -71,7 +90,7 @@ func (m *model) clickTab(x int) tea.Cmd {
 	return m.showSelected()
 }
 
-func (m *model) hitAt(x, y int) (row int, url string, ok bool) {
+func (m *model) hitAt(x, y int) (hit, bool) {
 	w, h := m.size()
 	blocks, _, room := m.layout(w, h)
 	top := 1
@@ -79,7 +98,7 @@ func (m *model) hitAt(x, y int) (row int, url string, ok bool) {
 		top++
 	}
 	if y < top || y-top >= room {
-		return 0, "", false
+		return hit{}, false
 	}
 	rows := m.shown()
 	start := windowStart(blocks, m.cursor, room)
@@ -90,12 +109,12 @@ func (m *model) hitAt(x, y int) (row int, url string, ok bool) {
 		}
 		for _, text := range blocks[i] {
 			if line == y {
-				return i, m.linkAt(rows[i].Summary.PRs, text, x), true
+				return hit{row: i, url: m.linkAt(rows[i].Summary.PRs, text, x), artifact: m.artifactAt(text), count: artifactCountAt(text, x)}, true
 			}
 			line++
 		}
 	}
-	return 0, "", false
+	return hit{}, false
 }
 
 func (m *model) linkAt(prs []transcript.PRLink, line string, x int) string {

@@ -119,6 +119,9 @@ func (m *model) layout(w, h int) (blocks [][]string, hint string, room int) {
 			}
 			last[idx] = m.rename.line(w, m.focused)
 		}
+		if m.arts != nil && r.SessionID == m.arts.id {
+			blocks[len(blocks)-1] = append(blocks[len(blocks)-1], m.artifactLines(r, w)...)
+		}
 	}
 	hint = m.hintLine(w)
 	room = h - 2 - strings.Count(hint, "\n")
@@ -408,6 +411,9 @@ func (m *model) hintLine(w int) string {
 	if m.rename != nil {
 		return m.rename.hint(w)
 	}
+	if m.arts != nil {
+		return gray.Render(ansi.Truncate("↑↓ move  enter open  esc close", w, "…"))
+	}
 	var text string
 	style := gray
 	switch {
@@ -450,6 +456,9 @@ func (m *model) listHint(w int) string {
 	}
 	if r, ok := m.current(); ok && len(visiblePRs(r.Summary.PRs, m.prState)) > 0 {
 		text = addItem(text, "o open PR", w)
+	}
+	if r, ok := m.current(); ok && len(r.Summary.Artifacts) > 0 {
+		text = addItem(text, "a artifacts", w)
 	}
 	return text
 }
