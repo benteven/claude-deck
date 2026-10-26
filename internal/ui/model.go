@@ -534,6 +534,14 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 	case "Q":
 		m.quit = &quitDialog{count: len(m.liveRows())}
 		return m.zoom(true)
+	case "U":
+		exe, err := os.Executable()
+		if err != nil {
+			m.err = err
+			return nil
+		}
+		m.hint = "Reloading the list"
+		return m.tmux("run-shell", "-b", tmux.ShellQuote(exe)+" reload")
 	}
 	return nil
 }

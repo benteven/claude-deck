@@ -87,8 +87,43 @@ func (c Client) run(steps ...[]string) error {
 	return nil
 }
 
+const BuildOption = "@deck-build"
+
+func listCommand(exe string) string {
+	return "sh -c " + ShellQuote("while true; do "+ShellQuote(exe)+" ui; sleep 1; done")
+}
+
+func previewCommand(exe string) string {
+	return ShellQuote(exe) + " preview"
+}
+
+func (c Client) Reload(exe, build string) error {
+	out, err := c.Run("list-panes", "-a", "-F", "#{pane_id}\t#{@deck-role}\t#{"+BuildOption+"}")
+	if err != nil {
+		return err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		f := strings.Split(line, "\t")
+		if len(f) != 3 || (build != "" && f[2] == build) {
+			continue
+		}
+		var cmd string
+		switch f[1] {
+		case "list":
+			cmd = listCommand(exe)
+		case "preview":
+			cmd = previewCommand(exe)
+		default:
+			continue
+		}
+		if _, err := c.Run("respawn-pane", "-k", "-t", f[0], cmd); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c Client) EnsureLayout(exe string, width int) error {
-	quoted := ShellQuote(exe)
 	if !c.hasSession(BgSession) {
 		err := c.run(
 			[]string{"new-session", "-d", "-s", "deck-bg", "-n", "keep", "-x", "200", "-y", "50", "sh -c 'while :; do sleep 3600; done'"},
@@ -100,7 +135,7 @@ func (c Client) EnsureLayout(exe string, width int) error {
 	}
 	if !c.hasSession(DeckSession) {
 		err := c.run(
-			[]string{"new-session", "-d", "-s", "deck", "-n", "main", "-x", "200", "-y", "50", "sh -c " + ShellQuote("while true; do "+quoted+" ui; sleep 1; done")},
+			[]string{"new-session", "-d", "-s", "deck", "-n", "main", "-x", "200", "-y", "50", listCommand(exe)},
 			[]string{"set-option", "-p", "-t", ListPane, "@deck-role", "list"},
 		)
 		if err != nil {
@@ -109,7 +144,7 @@ func (c Client) EnsureLayout(exe string, width int) error {
 	}
 	if c.slotPanes() < 2 {
 		err := c.run(
-			[]string{"split-window", "-h", "-t", ListPane, quoted + " preview"},
+			[]string{"split-window", "-h", "-t", ListPane, previewCommand(exe)},
 			[]string{"set-option", "-p", "-t", Slot, "@deck-role", "preview"},
 			[]string{"set-option", "-p", "-t", Slot, "@deck-session", ""},
 		)
