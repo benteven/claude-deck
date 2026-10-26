@@ -16,7 +16,10 @@ import (
 	"github.com/benteven/claude-deck/internal/store"
 	"github.com/benteven/claude-deck/internal/tmux"
 	"github.com/benteven/claude-deck/internal/ui"
+	"github.com/benteven/claude-deck/internal/update"
 )
+
+var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -36,9 +39,16 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	case "upgrade":
+		if err := upgrade(); err != nil {
+			client := tmux.Client{Socket: paths.Socket(), Conf: filepath.Join(paths.DeckHome(), "tmux.conf")}
+			client.Run("display-message", "-d", "10000", "claude-deck: "+err.Error())
+		}
+	case "version":
+		fmt.Println(version)
 	case "ui":
 		markBuild()
-		if err := ui.Run(); err != nil {
+		if err := ui.Run(version); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -46,6 +56,17 @@ func main() {
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
 		os.Exit(2)
 	}
+}
+
+func upgrade() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	if exe, err = update.Install(exe, version); err != nil {
+		return err
+	}
+	return exec.Command(exe, "reload").Run()
 }
 
 func buildID() string {

@@ -24,6 +24,7 @@ import (
 	"github.com/benteven/claude-deck/internal/store"
 	"github.com/benteven/claude-deck/internal/tmux"
 	"github.com/benteven/claude-deck/internal/transcript"
+	"github.com/benteven/claude-deck/internal/update"
 )
 
 const (
@@ -34,6 +35,8 @@ const (
 )
 
 type tickMsg struct{}
+
+type updateMsg string
 
 const (
 	prTTL      = 60 * time.Second
@@ -224,6 +227,8 @@ type model struct {
 	hint          string
 	err           error
 
+	version, latest string
+
 	noGH    bool
 	prs     map[string]*prEntry
 	prSem   chan struct{}
@@ -244,7 +249,7 @@ type model struct {
 	inDialog bool
 }
 
-func Run() error {
+func Run(version string) error {
 	home := paths.DeckHome()
 	cfg, err := store.LoadConfig(home)
 	if err != nil {
@@ -286,6 +291,7 @@ func Run() error {
 		prSem:      make(chan struct{}, prParallel),
 		prSaver:    &prSaver{},
 		noGH:       !hasGH(),
+		version:    version,
 	}
 	_, err = tea.NewProgram(m).Run()
 	if serr := reader.Save(); err == nil {
@@ -295,7 +301,8 @@ func Run() error {
 }
 
 func (m *model) Init() tea.Cmd {
-	return tea.Batch(m.refresh(), m.dialogFlag())
+	home := m.home
+	return tea.Batch(m.refresh(), m.dialogFlag(), func() tea.Msg { return updateMsg(update.Latest(home, time.Now())) })
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -317,6 +324,10 @@ func (m *model) dialogFlag() tea.Cmd {
 
 func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case updateMsg:
+		m.latest = string(msg)
+		home := m.home
+		return m, tea.Tick(time.Hour, func(now time.Time) tea.Msg { return updateMsg(update.Latest(home, now)) })
 	case inspectedMsg:
 		if p := m.picker; p != nil && p.input.Value() == msg.from {
 			changed := msg.path != p.path || msg.state != p.state
@@ -542,8 +553,8 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 			m.err = err
 			return nil
 		}
-		m.hint = "Reloading the list"
-		return m.tmux("run-shell", "-b", tmux.ShellQuote(exe)+" reload")
+		m.hint = "Upgrading, the list reloads when done"
+		return m.tmux("run-shell", "-b", tmux.ShellQuote(exe)+" upgrade")
 	}
 	return nil
 }

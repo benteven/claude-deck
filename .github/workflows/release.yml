@@ -27,7 +27,7 @@ jobs:
             arch="${target#*/}"
             name="claude-deck_${version}_${os}_${arch}"
             mkdir "dist/$name"
-            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "dist/$name/claude-deck" .
+            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.version=$version" -o "dist/$name/claude-deck" .
             cp README.md LICENSE "dist/$name/"
             tar -C dist -czf "dist/$name.tar.gz" "$name"
             rm -r "dist/$name"

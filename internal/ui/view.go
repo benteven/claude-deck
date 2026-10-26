@@ -14,6 +14,7 @@ import (
 	"github.com/benteven/claude-deck/internal/deck"
 	"github.com/benteven/claude-deck/internal/textclean"
 	"github.com/benteven/claude-deck/internal/transcript"
+	"github.com/benteven/claude-deck/internal/update"
 )
 
 const (
@@ -438,6 +439,9 @@ func (m *model) hintLine(w int) string {
 	for i, l := range lines {
 		lines[i] = style.Render(ansi.Truncate(l, w, "…"))
 	}
+	if update.Newer(m.version, m.latest) {
+		lines = append([]string{yellow.Render(ansi.Truncate("v"+m.latest+" is out, U upgrades", w, "…"))}, lines...)
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -463,7 +467,7 @@ func (m *model) listHint(w int) string {
 	if r, ok := m.current(); ok && len(r.Summary.Artifacts) > 0 {
 		text = addItem(text, "a artifacts", w)
 	}
-	text = addItem(text, "U reload", w)
+	text = addItem(text, "U upgrade", w)
 	return text
 }
 
