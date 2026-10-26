@@ -36,7 +36,6 @@ type toolRecord struct {
 			Content   json.RawMessage `json:"content"`
 			Input     struct {
 				Action   string `json:"action"`
-				URL      string `json:"url"`
 				TypeURL  string `json:"type_url"`
 				Title    string `json:"title"`
 				FilePath string `json:"file_path"`
@@ -70,9 +69,6 @@ func noteToolCalls(e *entry, line []byte) {
 				e.Pages[in.FilePath] = t
 			}
 		case b.Name == "Artifact":
-			if artifactRe.MatchString(in.URL) && in.Action != "delete" {
-				addArtifact(&e.Summary, in.URL)
-			}
 			if in.Asset || (in.Action != "" && in.Action != "publish") {
 				continue
 			}

@@ -45,7 +45,7 @@ func TestSummary(t *testing.T) {
 	assert.Equal(t, "/Users/dev/Projects/shop", s.Cwd)
 	assert.Equal(t, 205848, s.ContextTokens)
 	assert.Equal(t, []int{4737, 4744}, prNumbers(s.PRs))
-	assert.Equal(t, []string{"https://claude.ai/artifact/Billing1", "https://claude.ai/code/artifact/abc-123"}, s.Artifacts)
+	assert.Equal(t, []string{"https://claude.ai/artifact/Billing1"}, s.Artifacts)
 	assert.Equal(t, "Billing mockup", s.ArtifactTitles["https://claude.ai/artifact/Billing1"])
 	assert.Equal(t, 20, s.ContextPercent())
 }
