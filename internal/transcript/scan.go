@@ -78,7 +78,7 @@ func ValidID(id string) bool {
 	return id != "" && id == filepath.Base(id) && !strings.HasPrefix(id, ".")
 }
 
-const cacheVersion = 3
+const cacheVersion = 4
 
 type entry struct {
 	Version int
@@ -87,7 +87,6 @@ type entry struct {
 	Offset  int64
 	Calls   map[string]artifactCall
 	Pages   map[string]string
-	Types   map[string]bool
 	Summary Summary
 }
 
@@ -154,7 +153,6 @@ func (r *Reader) Summary(path string) (Summary, error) {
 	e.ModTime = info.ModTime()
 	r.entries[path] = e
 	s := e.Summary
-	s.Artifacts = withoutTypes(s.Artifacts, e.Types)
 	s.ArtifactTitles = maps.Clone(s.ArtifactTitles)
 	s.SessionID = strings.TrimSuffix(filepath.Base(path), ".jsonl")
 	if s.LastUsed.IsZero() {
@@ -258,6 +256,9 @@ func scan(path string, e *entry) error {
 				if t, err := time.Parse(time.RFC3339, rec.Timestamp); err == nil {
 					e.Summary.PromptedAt = t
 				}
+				for _, u := range artifactRe.FindAll(line, -1) {
+					addArtifact(&e.Summary, string(u))
+				}
 			}
 		}
 		apply(e, line)
@@ -290,9 +291,9 @@ func apply(e *entry, line []byte) {
 		}
 	}
 	noteToolCalls(e, line)
-	listed := applyToolResults(e, line)
+	applyToolResults(e, line)
 	if bytes.Contains(line, artifactMark) {
-		applyArtifactMentions(e, line, listed)
+		applyListTitles(e, line)
 	}
 }
 
