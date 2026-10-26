@@ -542,8 +542,8 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 			m.err = err
 			return nil
 		}
-		m.hint = "Reloading the list"
-		return m.tmux("run-shell", "-b", tmux.ShellQuote(exe)+" reload")
+		m.hint = "Upgrading, the list reloads when done"
+		return m.tmux("run-shell", "-b", tmux.ShellQuote(exe)+" upgrade")
 	}
 	return nil
 }

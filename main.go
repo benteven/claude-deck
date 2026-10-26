@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -36,6 +37,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	case "upgrade":
+		if err := upgrade(); err != nil {
+			client := tmux.Client{Socket: paths.Socket(), Conf: filepath.Join(paths.DeckHome(), "tmux.conf")}
+			client.Run("display-message", "-d", "10000", "claude-deck: "+err.Error())
+		}
 	case "ui":
 		markBuild()
 		if err := ui.Run(); err != nil {
@@ -46,6 +52,39 @@ func main() {
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
 		os.Exit(2)
 	}
+}
+
+func upgrade() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	if prefix := brewPrefix(exe); prefix != "" {
+		brew := filepath.Join(prefix, "bin", "brew")
+		for _, args := range [][]string{{"update", "--quiet"}, {"upgrade", "claude-deck"}} {
+			if out, err := exec.Command(brew, args...).CombinedOutput(); err != nil {
+				return fmt.Errorf("brew %s: %v: %s", args[0], err, lastLine(out))
+			}
+		}
+		exe = filepath.Join(prefix, "bin", "claude-deck")
+	}
+	return exec.Command(exe, "reload").Run()
+}
+
+func brewPrefix(exe string) string {
+	real, err := filepath.EvalSymlinks(exe)
+	if err != nil {
+		return ""
+	}
+	if i := strings.Index(real, "/Cellar/"); i > 0 {
+		return real[:i]
+	}
+	return ""
+}
+
+func lastLine(out []byte) string {
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	return lines[len(lines)-1]
 }
 
 func buildID() string {

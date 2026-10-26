@@ -463,7 +463,7 @@ func (m *model) listHint(w int) string {
 	if r, ok := m.current(); ok && len(r.Summary.Artifacts) > 0 {
 		text = addItem(text, "a artifacts", w)
 	}
-	text = addItem(text, "U reload", w)
+	text = addItem(text, "U upgrade", w)
 	return text
 }
 
