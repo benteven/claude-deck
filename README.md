@@ -76,6 +76,7 @@ In the list:
 | `R` | Restart the session in place, for example after Claude Code updates |
 | `t` | Take over a session running in another terminal |
 | `o` | Open the row's pull requests |
+| `a` | List the row's artifacts; Enter opens one |
 | `d` | Move a suspended session to the Trash |
 | `q` | Close the app; sessions keep running |
 | `Q` | Stop all sessions and quit |

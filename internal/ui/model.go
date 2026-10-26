@@ -190,6 +190,7 @@ type model struct {
 	starts   *pidStarts
 	picker   *picker
 	rename   *renameDialog
+	arts     *artifactList
 	takeover *takeoverDialog
 	quit     *quitDialog
 	del      *deleteDialog
@@ -378,6 +379,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.rename != nil {
 			return m, m.renameKey(msg)
 		}
+		if m.arts != nil {
+			return m, m.artifactsKey(msg)
+		}
 		if m.searching {
 			return m, m.searchKey(msg)
 		}
@@ -469,6 +473,11 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 			return m.openPRs(r)
 		}
 		return nil
+	case "a":
+		if r, ok := m.current(); ok {
+			return m.openArtifacts(r)
+		}
+		return nil
 	case "q":
 		text := fmt.Sprintf("claude-deck closed, %s still running", sessionCount(len(m.liveRows())))
 		return m.tmux("detach-client", "-E", "echo "+tmux.ShellQuote(text))
@@ -480,7 +489,7 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (m *model) dialogOpen() bool {
-	return m.prompt != nil || m.picker != nil || m.rename != nil || m.takeover != nil || m.quit != nil || m.del != nil || m.restart != nil
+	return m.prompt != nil || m.picker != nil || m.rename != nil || m.arts != nil || m.takeover != nil || m.quit != nil || m.del != nil || m.restart != nil
 }
 
 func (m *model) liveRows() []deck.Row {
@@ -1029,6 +1038,9 @@ func (m *model) followClear(msg refreshMsg) tea.Cmd {
 		m.markEnding(old)
 		msg.panes[i].SessionID = next.SessionID
 		delete(msg.events, old)
+		if m.arts != nil && m.arts.id == old {
+			m.arts = nil
+		}
 		if m.rename != nil && m.rename.pane == p.ID {
 			m.rename = nil
 		}
@@ -1107,7 +1119,7 @@ func (m *model) apply(msg refreshMsg) tea.Cmd {
 			cmds = append(cmds, m.showSelected())
 		}
 	}
-	if m.dialogOpen() && m.rename == nil {
+	if m.dialogOpen() && m.rename == nil && m.arts == nil {
 		cmds = append(cmds, m.zoom(true))
 	}
 	cmds = append(cmds, m.fetchPRs())
@@ -1132,6 +1144,9 @@ func (m *model) rebuild() (moved bool) {
 		} else {
 			d.busy = r.Busy
 		}
+	}
+	if a := m.arts; a != nil && !slices.ContainsFunc(m.shown(), func(r deck.Row) bool { return r.SessionID == a.id }) {
+		m.arts = nil
 	}
 	return m.selected != before
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,18 +22,19 @@ type PRLink struct {
 }
 
 type Summary struct {
-	SessionID     string
-	Cwd           string
-	Branch        string
-	Model         string
-	Title         string
-	AITitle       string
-	LastPrompt    string
-	ContextTokens int
-	PRs           []PRLink
-	Artifacts     []string
-	LastUsed      time.Time
-	PromptedAt    time.Time
+	SessionID      string
+	Cwd            string
+	Branch         string
+	Model          string
+	Title          string
+	AITitle        string
+	LastPrompt     string
+	ContextTokens  int
+	PRs            []PRLink
+	Artifacts      []string
+	ArtifactTitles map[string]string
+	LastUsed       time.Time
+	PromptedAt     time.Time
 }
 
 func (s Summary) ContextWindow() int {
@@ -76,13 +78,16 @@ func ValidID(id string) bool {
 	return id != "" && id == filepath.Base(id) && !strings.HasPrefix(id, ".")
 }
 
-const cacheVersion = 2
+const cacheVersion = 3
 
 type entry struct {
 	Version int
 	Size    int64
 	ModTime time.Time
 	Offset  int64
+	Calls   map[string]artifactCall
+	Pages   map[string]string
+	Types   map[string]bool
 	Summary Summary
 }
 
@@ -149,6 +154,8 @@ func (r *Reader) Summary(path string) (Summary, error) {
 	e.ModTime = info.ModTime()
 	r.entries[path] = e
 	s := e.Summary
+	s.Artifacts = withoutTypes(s.Artifacts, e.Types)
+	s.ArtifactTitles = maps.Clone(s.ArtifactTitles)
 	s.SessionID = strings.TrimSuffix(filepath.Base(path), ".jsonl")
 	if s.LastUsed.IsZero() {
 		s.LastUsed = info.ModTime()
@@ -263,10 +270,10 @@ func apply(e *entry, line []byte) {
 			addPR(&e.Summary, PRLink{Number: rec.PRNumber, URL: rec.PRURL, Repo: rec.PRRepo})
 		}
 	}
+	noteToolCalls(e, line)
+	listed := applyToolResults(e, line)
 	if bytes.Contains(line, artifactMark) {
-		for _, u := range artifactRe.FindAll(line, -1) {
-			addArtifact(&e.Summary, string(u))
-		}
+		applyArtifactMentions(e, line, listed)
 	}
 }
 
