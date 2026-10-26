@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -17,7 +16,10 @@ import (
 	"github.com/benteven/claude-deck/internal/store"
 	"github.com/benteven/claude-deck/internal/tmux"
 	"github.com/benteven/claude-deck/internal/ui"
+	"github.com/benteven/claude-deck/internal/update"
 )
+
+var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -42,9 +44,11 @@ func main() {
 			client := tmux.Client{Socket: paths.Socket(), Conf: filepath.Join(paths.DeckHome(), "tmux.conf")}
 			client.Run("display-message", "-d", "10000", "claude-deck: "+err.Error())
 		}
+	case "version":
+		fmt.Println(version)
 	case "ui":
 		markBuild()
-		if err := ui.Run(); err != nil {
+		if err := ui.Run(version); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -59,32 +63,10 @@ func upgrade() error {
 	if err != nil {
 		return err
 	}
-	if prefix := brewPrefix(exe); prefix != "" {
-		brew := filepath.Join(prefix, "bin", "brew")
-		for _, args := range [][]string{{"update", "--quiet"}, {"upgrade", "claude-deck"}} {
-			if out, err := exec.Command(brew, args...).CombinedOutput(); err != nil {
-				return fmt.Errorf("brew %s: %v: %s", args[0], err, lastLine(out))
-			}
-		}
-		exe = filepath.Join(prefix, "bin", "claude-deck")
+	if exe, err = update.Install(exe, version); err != nil {
+		return err
 	}
 	return exec.Command(exe, "reload").Run()
-}
-
-func brewPrefix(exe string) string {
-	real, err := filepath.EvalSymlinks(exe)
-	if err != nil {
-		return ""
-	}
-	if i := strings.Index(real, "/Cellar/"); i > 0 {
-		return real[:i]
-	}
-	return ""
-}
-
-func lastLine(out []byte) string {
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	return lines[len(lines)-1]
 }
 
 func buildID() string {

@@ -14,6 +14,7 @@ import (
 	"github.com/benteven/claude-deck/internal/deck"
 	"github.com/benteven/claude-deck/internal/textclean"
 	"github.com/benteven/claude-deck/internal/transcript"
+	"github.com/benteven/claude-deck/internal/update"
 )
 
 const (
@@ -437,6 +438,9 @@ func (m *model) hintLine(w int) string {
 	lines := strings.Split(text, "\n")
 	for i, l := range lines {
 		lines[i] = style.Render(ansi.Truncate(l, w, "…"))
+	}
+	if update.Newer(m.version, m.latest) {
+		lines = append([]string{yellow.Render(ansi.Truncate("v"+m.latest+" is out, U upgrades", w, "…"))}, lines...)
 	}
 	return strings.Join(lines, "\n")
 }

@@ -79,10 +79,10 @@ In the list:
 | `a` | List the row's artifacts; Enter opens one |
 | `d` | Move a suspended session to the Trash |
 | `q` | Close the app; sessions keep running |
-| `U` | Upgrade with Homebrew, then reload the list and preview; sessions keep running |
+| `U` | Upgrade to the latest release with Homebrew or the install script, then reload the list and preview; sessions keep running |
 | `Q` | Stop all sessions and quit |
 
-Run `claude-deck` again to come back to running sessions. After an upgrade, this also reloads the list with the new version, and `claude-deck reload` does the same from any shell. After a restart, sessions that were active show in gray and the app offers to resume them.
+Run `claude-deck` again to come back to running sessions. After an upgrade, this also reloads the list with the new version, and `claude-deck reload` does the same from any shell. The list checks GitHub for a new release every 6 hours and shows a line when one is out. After a restart, sessions that were active show in gray and the app offers to resume them.
 
 ## How it works
 
