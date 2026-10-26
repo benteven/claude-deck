@@ -27,6 +27,14 @@ func (m *model) wheel(ms tea.Mouse) tea.Cmd {
 }
 
 func (m *model) click(ms tea.Mouse) tea.Cmd {
+	if m.rename != nil {
+		if ms.Button == tea.MouseLeft {
+			if row, _, ok := m.hitAt(ms.X, ms.Y); !ok || row != m.cursor {
+				m.rename = nil
+			}
+		}
+		return nil
+	}
 	if !m.mouseActive() || ms.Button != tea.MouseLeft {
 		return nil
 	}

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -94,6 +95,8 @@ type refreshMsg struct {
 	summaries map[string]transcript.Summary
 	agents    map[string][]string
 	folders   []string
+	geo       geometry
+	geoOK     bool
 	err       error
 }
 
@@ -150,6 +153,9 @@ type model struct {
 	listedAt time.Time
 	savedAt  time.Time
 	loaded   bool
+
+	windowWidth int
+	dragSeen    int
 
 	active    []deck.Row
 	suspended []deck.Row
@@ -281,9 +287,6 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.picker != nil {
 			m.picker.input.SetWidth(max(m.width-4, 1))
 		}
-		if m.rename != nil {
-			m.rename.input.SetWidth(max(m.width-4, 1))
-		}
 		m.search.SetWidth(max(m.width-2, 1))
 	case tea.FocusMsg:
 		m.focused = true
@@ -304,7 +307,7 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 			return m, next
 		}
-		return m, tea.Batch(next, m.apply(msg))
+		return m, tea.Batch(next, m.dragged(msg.geo, msg.geoOK), m.apply(msg))
 	case prStateMsg:
 		e := m.prs[msg.url]
 		if e == nil {
@@ -404,6 +407,10 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 		return m.enter()
 	case "tab":
 		return m.toggleMode()
+	case "<":
+		return m.resizeList(-widthStep)
+	case ">":
+		return m.resizeList(widthStep)
 	case "/":
 		m.searching = true
 		return m.search.Focus()
@@ -428,8 +435,12 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 		if msg.String() == "s" && r.Kind == deck.Stale {
 			return m.dropStale(r)
 		}
-		m.rename = newRenameDialog(r, msg.String() == "s", m.width)
-		return tea.Batch(m.zoom(true), m.rename.input.Focus())
+		order := make([]string, 0, len(m.shown()))
+		for _, s := range m.shown() {
+			order = append(order, s.SessionID)
+		}
+		m.rename = newRenameDialog(r, msg.String() == "s", order)
+		return m.rename.input.Focus()
 	case "t":
 		r, ok := m.current()
 		if !ok || r.Kind != deck.Elsewhere {
@@ -615,8 +626,13 @@ func (m *model) confirmRename(d *renameDialog) tea.Cmd {
 	}
 	if !d.suspend {
 		m.rebuild()
-		return tea.Batch(m.saveState(), m.zoom(false), m.refreshPreview())
+		return tea.Batch(m.saveState(), m.refreshPreview())
 	}
+	i := slices.IndexFunc(m.shown(), func(r deck.Row) bool { return r.SessionID == d.id })
+	if i < 0 || m.shown()[i].Kind != deck.Live || m.shown()[i].PaneID != d.pane {
+		return m.saveState()
+	}
+	d.busy = m.shown()[i].Busy
 	var entry store.ActiveEntry
 	for _, e := range m.state.Active {
 		if e.SessionID == d.id {
@@ -633,7 +649,7 @@ func (m *model) confirmRename(d *renameDialog) tea.Cmd {
 		}
 		return nil
 	}
-	return tea.Batch(m.saveState(), tea.Sequence(m.zoom(false), m.showSelected(), stop))
+	return tea.Batch(m.saveState(), tea.Sequence(m.showSelected(), stop))
 }
 
 func (m *model) refreshPreview() tea.Cmd {
@@ -894,6 +910,7 @@ func (m *model) refresh() tea.Cmd {
 			return refreshMsg{err: err}
 		}
 		msg := refreshMsg{panes: panes, files: files, folders: folders, events: map[string]events.State{}, summaries: map[string]transcript.Summary{}}
+		msg.geo, msg.geoOK = sampleGeometry(t)
 		msg.live, _ = live.Running(claudeHome)
 		msg.starts = map[int]time.Time{}
 		keys := map[paneProc]bool{}
@@ -1090,7 +1107,7 @@ func (m *model) apply(msg refreshMsg) tea.Cmd {
 			cmds = append(cmds, m.showSelected())
 		}
 	}
-	if m.dialogOpen() {
+	if m.dialogOpen() && m.rename == nil {
 		cmds = append(cmds, m.zoom(true))
 	}
 	cmds = append(cmds, m.fetchPRs())
@@ -1101,8 +1118,32 @@ func (m *model) rebuild() (moved bool) {
 	before := m.selected
 	m.in.State = m.state
 	m.active, m.suspended = deck.Build(m.in)
+	if d := m.rename; d != nil {
+		keepOrder(m.active, d.order)
+		keepOrder(m.suspended, d.order)
+	}
 	m.syncCursor()
+	if d := m.rename; d != nil {
+		i := slices.IndexFunc(m.shown(), func(r deck.Row) bool { return r.SessionID == d.id })
+		if i < 0 {
+			m.rename = nil
+		} else if r := m.shown()[i]; r.Kind != d.kind || r.PaneID != d.pane {
+			m.rename = nil
+		} else {
+			d.busy = r.Busy
+		}
+	}
 	return m.selected != before
+}
+
+func keepOrder(rows []deck.Row, order []string) {
+	pos := func(r deck.Row) int {
+		if i := slices.Index(order, r.SessionID); i >= 0 {
+			return i
+		}
+		return len(order)
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return pos(rows[i]) < pos(rows[j]) })
 }
 
 func (m *model) syncCursor() {
