@@ -97,6 +97,16 @@ func applyToolResults(e *entry, line []byte) (listed bool) {
 	if len(e.Calls) == 0 || !bytes.Contains(line, toolResultMark) {
 		return false
 	}
+	pending := false
+	for id := range e.Calls {
+		if bytes.Contains(line, []byte(id)) {
+			pending = true
+			break
+		}
+	}
+	if !pending {
+		return false
+	}
 	var rec toolRecord
 	if json.Unmarshal(line, &rec) != nil {
 		return false
@@ -111,11 +121,14 @@ func applyToolResults(e *entry, line []byte) (listed bool) {
 			listed = true
 			continue
 		}
-		if u := artifactRe.Find(b.Content); u != nil {
-			_, named := e.Summary.ArtifactTitles[string(u)]
-			if c.Explicit || !named {
+		for _, u := range artifactRe.FindAll(b.Content, -1) {
+			if e.Types[string(u)] {
+				continue
+			}
+			if _, named := e.Summary.ArtifactTitles[string(u)]; c.Explicit || !named {
 				setArtifactTitle(&e.Summary, string(u), c.Title)
 			}
+			break
 		}
 	}
 	return listed

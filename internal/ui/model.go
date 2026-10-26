@@ -1038,6 +1038,9 @@ func (m *model) followClear(msg refreshMsg) tea.Cmd {
 		m.markEnding(old)
 		msg.panes[i].SessionID = next.SessionID
 		delete(msg.events, old)
+		if m.arts != nil && m.arts.id == old {
+			m.arts = nil
+		}
 		if m.rename != nil && m.rename.pane == p.ID {
 			m.rename = nil
 		}
@@ -1141,6 +1144,9 @@ func (m *model) rebuild() (moved bool) {
 		} else {
 			d.busy = r.Busy
 		}
+	}
+	if a := m.arts; a != nil && !slices.ContainsFunc(m.shown(), func(r deck.Row) bool { return r.SessionID == a.id }) {
+		m.arts = nil
 	}
 	return m.selected != before
 }

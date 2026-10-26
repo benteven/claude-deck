@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -154,6 +155,7 @@ func (r *Reader) Summary(path string) (Summary, error) {
 	r.entries[path] = e
 	s := e.Summary
 	s.Artifacts = withoutTypes(s.Artifacts, e.Types)
+	s.ArtifactTitles = maps.Clone(s.ArtifactTitles)
 	s.SessionID = strings.TrimSuffix(filepath.Base(path), ".jsonl")
 	if s.LastUsed.IsZero() {
 		s.LastUsed = info.ModTime()
