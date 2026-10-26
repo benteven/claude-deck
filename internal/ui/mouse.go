@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/benteven/claude-deck/internal/deck"
 	"github.com/benteven/claude-deck/internal/transcript"
 )
 
@@ -58,11 +59,14 @@ func (m *model) click(ms tea.Mouse) tea.Cmd {
 	if h.url != "" {
 		return openURLs([]string{h.url})
 	}
-	cmd := m.selectIndex(h.row)
 	if h.count {
-		return tea.Batch(cmd, m.openArtifacts(m.shown()[h.row]))
+		return tea.Batch(m.selectIndex(h.row), m.openArtifacts(m.shown()[h.row]))
 	}
-	return cmd
+	if r := m.shown()[h.row]; r.Kind == deck.Live {
+		m.cursor, m.selected = h.row, r.SessionID
+		return m.enter()
+	}
+	return m.selectIndex(h.row)
 }
 
 type hit struct {
