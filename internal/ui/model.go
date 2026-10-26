@@ -43,8 +43,45 @@ const (
 
 type prEntry struct {
 	state   string
+	checked time.Time
 	until   time.Time
 	pending bool
+}
+
+func prRecheck(state string, checked time.Time) time.Time {
+	if state == "merged" || state == "closed" {
+		return time.Unix(1<<62, 0)
+	}
+	return checked.Add(prTTL)
+}
+
+func loadedPRs(saved map[string]store.PRState) map[string]*prEntry {
+	prs := make(map[string]*prEntry, len(saved))
+	for url, s := range saved {
+		prs[url] = &prEntry{state: s.State, checked: s.Checked, until: prRecheck(s.State, s.Checked)}
+	}
+	return prs
+}
+
+func (m *model) savePRs() tea.Cmd {
+	snap := map[string]store.PRState{}
+	for url, e := range m.prs {
+		if e.state != "" {
+			snap[url] = store.PRState{State: e.state, Checked: e.checked}
+		}
+	}
+	sv, home := m.prSaver, m.home
+	sv.mu.Lock()
+	sv.prs = snap
+	sv.mu.Unlock()
+	return func() tea.Msg {
+		sv.mu.Lock()
+		defer sv.mu.Unlock()
+		if err := store.SavePRs(home, sv.prs); err != nil {
+			return errMsg{err}
+		}
+		return nil
+	}
 }
 
 type prStateMsg struct {
@@ -136,6 +173,11 @@ type slotWant struct {
 	preview bool
 }
 
+type prSaver struct {
+	mu  sync.Mutex
+	prs map[string]store.PRState
+}
+
 type stateSaver struct {
 	mu    sync.Mutex
 	state store.State
@@ -182,8 +224,9 @@ type model struct {
 	hint          string
 	err           error
 
-	prs   map[string]*prEntry
-	prSem chan struct{}
+	prs     map[string]*prEntry
+	prSem   chan struct{}
+	prSaver *prSaver
 
 	ending   map[string]bool
 	followed map[string]string
@@ -210,6 +253,10 @@ func Run() error {
 	if err != nil {
 		return err
 	}
+	saved, err := store.LoadPRs(home)
+	if err != nil {
+		saved = map[string]store.PRState{}
+	}
 	reader := transcript.NewReader(filepath.Join(home, "summaries.json"))
 	search := textinput.New()
 	search.Prompt = "/"
@@ -234,8 +281,9 @@ func Run() error {
 		saver:      &stateSaver{},
 		starts:     &pidStarts{at: map[paneProc]time.Time{}},
 		focused:    true,
-		prs:        map[string]*prEntry{},
+		prs:        loadedPRs(saved),
 		prSem:      make(chan struct{}, prParallel),
+		prSaver:    &prSaver{},
 	}
 	_, err = tea.NewProgram(m).Run()
 	if serr := reader.Save(); err == nil {
@@ -319,7 +367,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			e.until = time.Now().Add(prErrorTTL)
 		} else {
-			e.state, e.until = msg.state, time.Now().Add(prTTL)
+			e.state, e.checked = msg.state, time.Now()
+			e.until = prRecheck(e.state, e.checked)
+			return m, m.savePRs()
 		}
 	case startedMsg:
 		return m, m.started(msg)
