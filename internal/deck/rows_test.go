@@ -30,7 +30,7 @@ func TestActiveOrder(t *testing.T) {
 		}},
 		Panes:     map[string]string{"a": "%1", "b": "%2", "c": "%3"},
 		Events:    map[string]events.State{"b": {Event: "UserPromptSubmit", PromptAt: t0.Add(time.Minute)}},
-		Summaries: map[string]transcript.Summary{"c": {LastUsed: t0.Add(2 * time.Minute)}},
+		Summaries: map[string]transcript.Summary{"a": {LastUsed: t0.Add(3 * time.Minute)}, "c": {PromptedAt: t0.Add(2 * time.Minute)}},
 	}
 	active, _ := Build(in)
 	assert.Equal(t, []string{"c", "b", "a"}, ids(active))
