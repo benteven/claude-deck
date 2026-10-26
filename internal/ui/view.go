@@ -43,8 +43,11 @@ func numLabel(n int) string {
 	return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(numColors[n-1])).Render(strconv.Itoa(n))
 }
 
-func nameLine(name string, style lipgloss.Style, mark string, num, inner int) string {
+func nameLine(name string, style lipgloss.Style, mark string, num int, remote bool, inner int) string {
 	tag := numLabel(num)
+	if remote {
+		tag = strings.TrimSpace(yellow.Render("●") + " " + tag)
+	}
 	reserved := lipgloss.Width(mark)
 	if tag != "" {
 		reserved += lipgloss.Width(tag) + 1
@@ -274,17 +277,17 @@ func rowLines(r deck.Row, w int, selected, focused bool, prState func(string) st
 	case r.Kind == deck.Elsewhere:
 		mark = " " + gray.Render("elsewhere")
 	}
-	lines := []string{nameLine(r.Name, white, mark, r.Num, inner), contextLine(r.Summary.ContextPercent())}
+	lines := []string{nameLine(r.Name, white, mark, r.Num, r.Remote, inner), contextLine(r.Summary.ContextPercent())}
 
 	var extra []string
 	for _, pr := range visiblePRs(r.Summary.PRs, prState) {
 		extra = append(extra, prText(pr, prState(pr.URL), true))
 	}
-	if n := len(r.Summary.Artifacts); n > 0 {
-		extra = append(extra, purple.Render(fmt.Sprintf("Artifacts: %d", n)))
-	}
 	if len(extra) > 0 {
 		lines = append(lines, fitItems(extra, inner))
+	}
+	if n := len(r.Summary.Artifacts); n > 0 {
+		lines = append(lines, purple.Render(fmt.Sprintf("Artifacts: %d", n)))
 	}
 	lines = append(lines, agentLines(r.Agents, inner, true)...)
 
@@ -319,18 +322,18 @@ func staleLines(r deck.Row, w int, selected, focused bool, prState func(string) 
 	pct := r.Summary.ContextPercent()
 	filled := min(max(pct, 0), 100) * barCells / 100
 	lines := []string{
-		nameLine(r.Name, gray, "", r.Num, max(w-2, 1)),
+		nameLine(r.Name, gray, "", r.Num, r.Remote, max(w-2, 1)),
 		strings.Repeat("━", filled) + strings.Repeat("─", barCells-filled) + fmt.Sprintf(" %d%% ctx", pct),
 	}
 	var extra []string
 	for _, pr := range visiblePRs(r.Summary.PRs, prState) {
 		extra = append(extra, prText(pr, prState(pr.URL), false))
 	}
-	if n := len(r.Summary.Artifacts); n > 0 {
-		extra = append(extra, fmt.Sprintf("Artifacts: %d", n))
-	}
 	if len(extra) > 0 {
 		lines = append(lines, fitItems(extra, max(w-2, 1)))
+	}
+	if n := len(r.Summary.Artifacts); n > 0 {
+		lines = append(lines, fmt.Sprintf("Artifacts: %d", n))
 	}
 	lines = append(lines, agentLines(r.Agents, max(w-2, 1), false)...)
 	for i, l := range lines {

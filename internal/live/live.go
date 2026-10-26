@@ -15,6 +15,7 @@ type Session struct {
 	NameSource string `json:"nameSource"`
 	Status     string `json:"status"`
 	StartedAt  int64  `json:"startedAt"`
+	BridgeID   string `json:"bridgeSessionId"`
 }
 
 func Running(claudeHome string) ([]Session, error) {
