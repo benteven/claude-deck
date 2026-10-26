@@ -104,7 +104,7 @@ func (m *model) artifactAt(line string) string {
 func artifactCountAt(line string, x int) bool {
 	plain := ansi.Strip(line)
 	i := strings.Index(plain, "Artifacts: ")
-	if i < 0 {
+	if i < 0 || strings.TrimLeft(plain[:i], "▌ ") != "" {
 		return false
 	}
 	from := ansi.StringWidth(plain[:i])
