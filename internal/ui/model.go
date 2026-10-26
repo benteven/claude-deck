@@ -133,7 +133,7 @@ type refreshMsg struct {
 	events    map[string]events.State
 	files     []transcript.File
 	summaries map[string]transcript.Summary
-	agents    map[string][]string
+	agents    map[string][]transcript.Agent
 	folders   []string
 	geo       geometry
 	geoOK     bool
@@ -246,9 +246,12 @@ type model struct {
 	restart  *restartDialog
 	handoff  *handoffDialog
 	handoffs map[string]*pendingHandoff
-	gone     map[string]bool
-	quitting bool
-	inDialog bool
+
+	agentMode bool
+	agent     string
+	gone      map[string]bool
+	quitting  bool
+	inDialog  bool
 }
 
 func Run(version string) error {
@@ -536,6 +539,11 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		m.restart = &restartDialog{row: r}
 		return m.zoom(true)
+	case "g":
+		if m.mode != modeActive {
+			return nil
+		}
+		return m.toggleAgentMode()
 	case "c":
 		if r, ok := m.current(); ok {
 			return m.startHandoff(r)
@@ -778,6 +786,9 @@ func (m *model) endDead(panes []tmux.Pane, slotPane string) tea.Cmd {
 }
 
 func (m *model) move(d int) tea.Cmd {
+	if m.agentMode {
+		return m.moveAgent(d)
+	}
 	return m.selectIndex(m.cursor + d)
 }
 
@@ -788,6 +799,7 @@ func (m *model) selectIndex(i int) tea.Cmd {
 	}
 	m.cursor = min(max(i, 0), len(rows)-1)
 	m.selected = rows[m.cursor].SessionID
+	m.agent = ""
 	return m.showSelected()
 }
 
@@ -805,6 +817,7 @@ func (m *model) setMode(mode int) bool {
 	}
 	cur := position{m.cursor, m.selected}
 	m.cursor, m.selected = m.other.cursor, m.other.selected
+	m.agent = ""
 	m.other = cur
 	m.mode = mode
 	m.resetSearch()
@@ -863,6 +876,7 @@ func (m *model) enter() tea.Cmd {
 	if !ok {
 		return nil
 	}
+	m.agent = ""
 	switch r.Kind {
 	case deck.Elsewhere:
 		m.hint = "running in another terminal"
@@ -1035,12 +1049,12 @@ func (m *model) refresh() tea.Cmd {
 	}
 }
 
-func runningAgents(ids []string, evs map[string]events.State, sessions []live.Session, files []transcript.File) map[string][]string {
+func runningAgents(ids []string, evs map[string]events.State, sessions []live.Session, files []transcript.File) map[string][]transcript.Agent {
 	paths := make(map[string]string, len(files))
 	for _, f := range files {
 		paths[f.SessionID] = f.Path
 	}
-	agents := map[string][]string{}
+	agents := map[string][]transcript.Agent{}
 	for _, id := range ids {
 		if running := evs[id].Agents; len(running) > 0 {
 			agents[id] = transcript.AgentDescriptions(paths[id], running)
@@ -1200,6 +1214,10 @@ func (m *model) apply(msg refreshMsg) tea.Cmd {
 	if m.dialogOpen() && m.rename == nil && m.arts == nil {
 		cmds = append(cmds, m.zoom(true))
 	}
+	if r, ok := m.current(); m.agent != "" && (!ok || m.agentIndex(r) < 0) {
+		m.agent = ""
+		cmds = append(cmds, m.showSelected())
+	}
 	cmds = append(cmds, m.fetchPRs(), m.advanceHandoffs(time.Now()))
 	return tea.Batch(cmds...)
 }
@@ -1267,6 +1285,9 @@ func previewTarget(r deck.Row) string {
 
 func (m *model) showSelected() tea.Cmd {
 	r, ok := m.current()
+	if k := m.agentIndex(r); ok && k >= 0 {
+		return m.show(m.previewPane, agentTarget(r, visibleAgents(r)[k]), true)
+	}
 	switch {
 	case !ok:
 		return m.show(m.previewPane, "", true)

@@ -27,7 +27,7 @@ var (
 	white = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
 )
 
-func Render(entries []transcript.Entry, title string, width, height int) string {
+func Render(entries []transcript.Entry, title, note string, width, height int) string {
 	if width < 1 || height < 1 {
 		return ""
 	}
@@ -48,7 +48,7 @@ func Render(entries []transcript.Entry, title string, width, height int) string 
 		}
 		body = append(body, strings.Split(ansi.Wrap(text, width, ""), "\n")...)
 	}
-	body = append(body, footer)
+	body = append(body, note)
 	room := height - 1
 	if len(body) > room {
 		body = body[len(body)-room:]
@@ -73,7 +73,7 @@ func Print(path string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(Render(entries, path, 100, 40))
+	fmt.Println(Render(entries, path, footer, 100, 40))
 	return nil
 }
 
@@ -125,15 +125,19 @@ func readTarget(file string) string {
 
 func draw(target string, w, h int) string {
 	if target == "" {
-		return Render(nil, "", w, h)
+		return Render(nil, "", "", w, h)
 	}
-	path, title, _ := strings.Cut(target, "\t")
+	path, rest, _ := strings.Cut(target, "\t")
+	title, note, _ := strings.Cut(rest, "\t")
 	if title == "" {
 		title = path
 	}
+	if note == "" {
+		note = footer
+	}
 	entries, err := transcript.Tail(path, tailEntries)
 	if err != nil {
-		return Render(nil, "", w, h)
+		return Render(nil, "", "", w, h)
 	}
-	return Render(entries, title, w, h)
+	return Render(entries, title, note, w, h)
 }
