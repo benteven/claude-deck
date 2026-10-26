@@ -117,7 +117,7 @@ func (m *model) hitAt(x, y int) (hit, bool) {
 		}
 		for j, text := range blocks[i] {
 			if line == y {
-				return hit{row: i, url: m.linkAt(rows[i].Summary.PRs, text, x), artifact: m.artifactAt(text), count: (j == extra || j == extra+1) && artifactCountAt(text, x)}, true
+				return hit{row: i, url: m.linkAt(rows[i].Summary.PRs, text, x), artifact: m.artifactAt(text), count: j >= extra && artifactCountAt(text, x)}, true
 			}
 			line++
 		}

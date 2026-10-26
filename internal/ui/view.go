@@ -281,6 +281,7 @@ func rowLines(r deck.Row, w int, selected, focused bool, prState func(string) st
 		mark = " " + gray.Render("elsewhere")
 	}
 	lines := []string{nameLine(r.Name, white, mark, r.Num, r.Remote, inner), contextLine(r.Summary.ContextPercent())}
+	lines = append(lines, agentLines(r.Agents, inner, true)...)
 
 	var extra []string
 	for _, pr := range visiblePRs(r.Summary.PRs, prState) {
@@ -292,7 +293,6 @@ func rowLines(r deck.Row, w int, selected, focused bool, prState func(string) st
 	if n := len(r.Summary.Artifacts); n > 0 {
 		lines = append(lines, purple.Render(fmt.Sprintf("Artifacts: %d", n)))
 	}
-	lines = append(lines, agentLines(r.Agents, inner, true)...)
 
 	for i, l := range lines {
 		lines[i] = ansi.Truncate(bar+l, w, "")
@@ -328,6 +328,7 @@ func staleLines(r deck.Row, w int, selected, focused bool, prState func(string) 
 		nameLine(r.Name, gray, "", r.Num, r.Remote, max(w-2, 1)),
 		strings.Repeat("━", filled) + strings.Repeat("─", barCells-filled) + fmt.Sprintf(" %d%% ctx", pct),
 	}
+	lines = append(lines, agentLines(r.Agents, max(w-2, 1), false)...)
 	var extra []string
 	for _, pr := range visiblePRs(r.Summary.PRs, prState) {
 		extra = append(extra, prText(pr, prState(pr.URL), false))
@@ -338,7 +339,6 @@ func staleLines(r deck.Row, w int, selected, focused bool, prState func(string) 
 	if n := len(r.Summary.Artifacts); n > 0 {
 		lines = append(lines, fmt.Sprintf("Artifacts: %d", n))
 	}
-	lines = append(lines, agentLines(r.Agents, max(w-2, 1), false)...)
 	for i, l := range lines {
 		if i > 0 {
 			l = gray.Render(l)
