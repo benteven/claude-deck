@@ -78,7 +78,7 @@ func ValidID(id string) bool {
 	return id != "" && id == filepath.Base(id) && !strings.HasPrefix(id, ".")
 }
 
-const cacheVersion = 4
+const cacheVersion = 5
 
 type entry struct {
 	Version int
@@ -255,9 +255,6 @@ func scan(path string, e *entry) error {
 			if json.Unmarshal(line, &rec) == nil && rec.human() {
 				if t, err := time.Parse(time.RFC3339, rec.Timestamp); err == nil {
 					e.Summary.PromptedAt = t
-				}
-				for _, u := range artifactRe.FindAll(line, -1) {
-					addArtifact(&e.Summary, string(u))
 				}
 			}
 		}
