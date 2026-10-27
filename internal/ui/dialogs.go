@@ -14,6 +14,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/benteven/claude-deck/internal/accounts"
 	"github.com/benteven/claude-deck/internal/deck"
 	"github.com/benteven/claude-deck/internal/events"
 	"github.com/benteven/claude-deck/internal/live"
@@ -386,6 +387,7 @@ func (m *model) trashed(msg trashedMsg) tea.Cmd {
 	m.gone[msg.id] = true
 	m.err = msg.err
 	delete(m.state.Names, msg.id)
+	delete(m.state.Accounts, msg.id)
 	delete(m.in.Summaries, msg.id)
 	m.in.Files = m.withoutGone(m.in.Files)
 	m.rebuild()
@@ -428,28 +430,37 @@ func (m *model) restartKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "y":
 		r := m.restart.row
 		m.restart = nil
-		if m.resuming[r.SessionID] {
-			return m.zoom(false)
-		}
-		m.resuming[r.SessionID] = true
-		m.markEnding(r.SessionID)
-		delete(m.in.Panes, r.SessionID)
-		m.rebuild()
-		ops := m.ops
-		name := m.state.Names[r.SessionID]
-		run := func() tea.Msg {
-			if err := ops.Stop(r.PaneID, r.Busy); err != nil {
-				return restartedMsg{row: r, err: err, stopFailed: true}
-			}
-			pane, err := ops.Start(r.Cwd, r.SessionID, name, true)
-			return restartedMsg{row: r, pane: pane, err: err}
-		}
-		return tea.Sequence(m.zoom(false), m.showSelected(), run)
+		return tea.Sequence(m.zoom(false), m.restartRow(r))
 	case "n", "esc":
 		m.restart = nil
 		return m.zoom(false)
 	}
 	return nil
+}
+
+func (m *model) restartRow(r deck.Row) tea.Cmd {
+	account := m.state.AccountFor(r.SessionID)
+	if m.resuming[r.SessionID] {
+		return nil
+	}
+	if !accounts.LoggedIn(m.home, account) {
+		m.err = fmt.Errorf("account %s is not logged in, press A to log in", account)
+		return nil
+	}
+	m.resuming[r.SessionID] = true
+	m.markEnding(r.SessionID)
+	delete(m.in.Panes, r.SessionID)
+	m.rebuild()
+	ops := m.ops
+	name := m.state.Names[r.SessionID]
+	run := func() tea.Msg {
+		if err := ops.Stop(r.PaneID, r.Busy); err != nil {
+			return restartedMsg{row: r, err: err, stopFailed: true}
+		}
+		pane, err := ops.Start(r.Cwd, r.SessionID, name, true, account)
+		return restartedMsg{row: r, pane: pane, err: err}
+	}
+	return tea.Sequence(m.showSelected(), run)
 }
 
 func (m *model) restarted(msg restartedMsg) tea.Cmd {

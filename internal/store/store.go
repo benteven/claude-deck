@@ -79,8 +79,17 @@ type ActiveEntry struct {
 }
 
 type State struct {
-	Names  map[string]string `json:"names"`
-	Active []ActiveEntry     `json:"active"`
+	Names    map[string]string `json:"names"`
+	Active   []ActiveEntry     `json:"active"`
+	Account  string            `json:"account,omitempty"`
+	Accounts map[string]string `json:"accounts,omitempty"`
+}
+
+func (s State) AccountFor(sessionID string) string {
+	if a, ok := s.Accounts[sessionID]; ok {
+		return a
+	}
+	return s.Account
 }
 
 func readJSON(path string, v any) error {

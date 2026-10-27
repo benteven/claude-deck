@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/benteven/claude-deck/internal/accounts"
 	"github.com/benteven/claude-deck/internal/paths"
 	"github.com/benteven/claude-deck/internal/store"
 	"github.com/benteven/claude-deck/internal/tmux"
@@ -20,13 +21,24 @@ type Ops struct {
 	T         tmux.Client
 	Cfg       store.Config
 	HooksPath string
+	Home      string
 }
 
-func (o Ops) Start(cwd, sessionID, name string, resume bool) (string, error) {
+func (o Ops) Start(cwd, sessionID, name string, resume bool, account string) (string, error) {
 	if info, err := os.Stat(cwd); err != nil || !info.IsDir() {
 		return "", fmt.Errorf("folder not found: %s", cwd)
 	}
 	args := []string{paths.ClaudeCommand()}
+	if account != "" {
+		if !accounts.LoggedIn(o.Home, account) {
+			return "", fmt.Errorf("account %s is not logged in, press A to log in", account)
+		}
+		dir, err := accounts.Prepare(o.Home, paths.ClaudeHome(), account)
+		if err != nil {
+			return "", err
+		}
+		args = append([]string{"env", "CLAUDE_CONFIG_DIR=" + dir}, args...)
+	}
 	if resume {
 		args = append(args, "--resume", sessionID)
 	} else {
@@ -53,10 +65,45 @@ func (o Ops) Start(cwd, sessionID, name string, resume bool) (string, error) {
 		return "", err
 	}
 	paneID = strings.TrimSpace(paneID)
-	if _, err := o.T.Run("set-option", "-p", "-t", paneID, "@deck-session", sessionID); err != nil {
+	if _, err := o.T.Run("set-option", "-p", "-t", paneID, "@deck-session", sessionID, ";", "set-option", "-p", "-t", paneID, "@deck-account", account); err != nil {
 		return paneID, err
 	}
 	return paneID, nil
+}
+
+func (o Ops) Login(exe, account string) (string, error) {
+	command := tmux.ShellQuote(exe) + " login --wait " + tmux.ShellQuote(account)
+	paneID, err := o.T.Run("new-window", "-d", "-P", "-F", "#{pane_id}", "-t", tmux.BgSession+":", command)
+	if err != nil {
+		return "", err
+	}
+	paneID = strings.TrimSpace(paneID)
+	_, err = o.T.Run("set-option", "-p", "-t", paneID, "@deck-role", "login")
+	return paneID, err
+}
+
+func RemoveAccount(deckHome, name string) error {
+	dir := accounts.Dir(deckHome, name)
+	if !accounts.ValidName(name) || !accounts.Exists(deckHome, name) {
+		return fmt.Errorf("no account %q", name)
+	}
+	logout := exec.Command(paths.ClaudeCommand(), "auth", "logout")
+	logout.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+dir)
+	if out, err := logout.CombinedOutput(); err != nil && accounts.LoggedIn(deckHome, name) {
+		return fmt.Errorf("log out of %s: %v: %s", name, err, strings.TrimSpace(string(out)))
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.Type()&os.ModeSymlink != 0 {
+			if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return Trash(dir)
 }
 
 func (o Ops) Show(paneID string) error {

@@ -246,7 +246,13 @@ type model struct {
 	restart  *restartDialog
 	handoff  *handoffDialog
 	help     *helpScreen
-	handoffs map[string]*pendingHandoff
+	accounts *accountDialog
+
+	switches    map[string]bool
+	paneAccount map[string]string
+	loginPane   string
+	loginName   string
+	handoffs    map[string]*pendingHandoff
 
 	agentMode bool
 	agent     string
@@ -284,6 +290,7 @@ func Run(version string) error {
 			T:         tmux.Client{Socket: paths.Socket(), Conf: filepath.Join(home, "tmux.conf")},
 			Cfg:       cfg,
 			HooksPath: filepath.Join(home, "hooks.json"),
+			Home:      home,
 		},
 		reader:     reader,
 		home:       home,
@@ -390,6 +397,10 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			e.until = prRecheck(e.state, e.checked)
 			return m, m.savePRs()
 		}
+	case loginMsg:
+		return m, m.loginStarted(msg)
+	case accountRemovedMsg:
+		return m, m.accountRemoved(msg)
 	case startedMsg:
 		return m, m.started(msg)
 	case restartedMsg:
@@ -448,6 +459,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.help != nil {
 			return m, m.helpKey(msg)
 		}
+		if m.accounts != nil {
+			return m, m.accountsKey(msg)
+		}
 		if m.picker != nil {
 			return m, m.pickerKey(msg)
 		}
@@ -470,6 +484,8 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rename.input, cmd = m.rename.input.Update(msg)
 		case m.searching:
 			m.search, cmd = m.search.Update(msg)
+		case m.accounts != nil && m.accounts.naming:
+			m.accounts.input, cmd = m.accounts.input.Update(msg)
 		}
 		return m, cmd
 	}
@@ -569,6 +585,8 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 	case "Q":
 		m.quit = &quitDialog{count: len(m.liveRows())}
 		return m.zoom(true)
+	case "A":
+		return m.openAccounts()
 	case "?":
 		m.help = &helpScreen{}
 		return m.zoom(true)
@@ -585,7 +603,7 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (m *model) dialogOpen() bool {
-	return m.prompt != nil || m.picker != nil || m.rename != nil || m.arts != nil || m.takeover != nil || m.quit != nil || m.del != nil || m.restart != nil || m.handoff != nil || m.help != nil
+	return m.prompt != nil || m.picker != nil || m.rename != nil || m.arts != nil || m.takeover != nil || m.quit != nil || m.del != nil || m.restart != nil || m.handoff != nil || m.help != nil || m.accounts != nil
 }
 
 func (m *model) liveRows() []deck.Row {
@@ -1171,8 +1189,14 @@ func startedAfter(startedAt int64, procStart time.Time) bool {
 func (m *model) apply(msg refreshMsg) tea.Cmd {
 	followed := m.followClear(msg)
 	m.in.Panes = map[string]string{}
+	m.paneAccount = map[string]string{}
 	slotPane := ""
+	loginDead, loginGone := false, m.loginPane != ""
 	for _, p := range msg.panes {
+		m.paneAccount[p.ID] = p.Account
+		if p.ID == m.loginPane {
+			loginDead, loginGone = p.Dead, false
+		}
 		if p.Role == "preview" {
 			m.previewPane = p.ID
 		}
@@ -1200,7 +1224,7 @@ func (m *model) apply(msg refreshMsg) tea.Cmd {
 	m.folders = msg.folders
 
 	var cmds []tea.Cmd
-	cmds = append(cmds, followed, m.endDead(msg.panes, slotPane))
+	cmds = append(cmds, followed, m.endDead(msg.panes, slotPane), m.endLogin(loginDead, loginGone))
 	if m.rebuild() && m.loaded {
 		cmds = append(cmds, m.showSelected())
 	}
@@ -1225,7 +1249,7 @@ func (m *model) apply(msg refreshMsg) tea.Cmd {
 		m.agent = ""
 		cmds = append(cmds, m.showSelected())
 	}
-	cmds = append(cmds, m.fetchPRs(), m.advanceHandoffs(time.Now()))
+	cmds = append(cmds, m.fetchPRs(), m.advanceHandoffs(time.Now()), m.advanceSwitches())
 	return tea.Batch(cmds...)
 }
 
@@ -1291,6 +1315,9 @@ func previewTarget(r deck.Row) string {
 }
 
 func (m *model) showSelected() tea.Cmd {
+	if m.loginPane != "" {
+		return nil
+	}
 	r, ok := m.current()
 	if k := m.agentIndex(r); ok && k >= 0 {
 		return m.show(m.previewPane, agentTarget(r, visibleAgents(r)[k]), true)
@@ -1370,7 +1397,7 @@ func (m *model) tmux(args ...string) tea.Cmd {
 func (m *model) saveState() tea.Cmd {
 	sv, home := m.saver, m.home
 	sv.mu.Lock()
-	sv.state = store.State{Names: maps.Clone(m.state.Names), Active: slices.Clone(m.state.Active)}
+	sv.state = store.State{Names: maps.Clone(m.state.Names), Active: slices.Clone(m.state.Active), Account: m.state.Account, Accounts: maps.Clone(m.state.Accounts)}
 	sv.mu.Unlock()
 	return func() tea.Msg {
 		sv.mu.Lock()
@@ -1384,18 +1411,18 @@ func (m *model) saveState() tea.Cmd {
 
 func (m *model) start(cwd string) tea.Cmd {
 	id := uuid.NewV4().String()
-	ops := m.ops
+	ops, account := m.ops, m.state.Account
 	return func() tea.Msg {
-		pane, err := ops.Start(cwd, id, "", false)
+		pane, err := ops.Start(cwd, id, "", false, account)
 		return startedMsg{id: id, cwd: cwd, pane: pane, err: err}
 	}
 }
 
 func (m *model) resume(r deck.Row) tea.Cmd {
-	ops := m.ops
+	ops, account := m.ops, m.state.AccountFor(r.SessionID)
 	name := m.state.Names[r.SessionID]
 	return func() tea.Msg {
-		pane, err := ops.Start(r.Cwd, r.SessionID, name, true)
+		pane, err := ops.Start(r.Cwd, r.SessionID, name, true, account)
 		return startedMsg{id: r.SessionID, cwd: r.Cwd, name: r.Name, pane: pane, err: err}
 	}
 }
