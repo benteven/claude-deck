@@ -14,13 +14,13 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/benteven/claude-deck/internal/accounts"
-	"github.com/benteven/claude-deck/internal/deck"
-	"github.com/benteven/claude-deck/internal/events"
-	"github.com/benteven/claude-deck/internal/live"
-	"github.com/benteven/claude-deck/internal/store"
-	"github.com/benteven/claude-deck/internal/textclean"
-	"github.com/benteven/claude-deck/internal/transcript"
+	"github.com/benteven/deckhand/internal/accounts"
+	"github.com/benteven/deckhand/internal/deck"
+	"github.com/benteven/deckhand/internal/events"
+	"github.com/benteven/deckhand/internal/live"
+	"github.com/benteven/deckhand/internal/store"
+	"github.com/benteven/deckhand/internal/textclean"
+	"github.com/benteven/deckhand/internal/transcript"
 )
 
 type picker struct {

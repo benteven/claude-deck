@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/benteven/claude-deck/internal/store"
+	"github.com/benteven/deckhand/internal/store"
 )
 
 const (

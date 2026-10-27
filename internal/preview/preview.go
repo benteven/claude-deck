@@ -12,8 +12,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/term"
 
-	"github.com/benteven/claude-deck/internal/textclean"
-	"github.com/benteven/claude-deck/internal/transcript"
+	"github.com/benteven/deckhand/internal/textclean"
+	"github.com/benteven/deckhand/internal/transcript"
 )
 
 const (

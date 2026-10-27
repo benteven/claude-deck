@@ -210,6 +210,23 @@ func mergeEntries(from, to json.RawMessage, trust bool) (json.RawMessage, bool, 
 	return out, true, err
 }
 
+func ForgetLogins(deckHome string) {
+	for _, a := range List(deckHome, "") {
+		if a.Name == "" {
+			continue
+		}
+		file := filepath.Join(Dir(deckHome, a.Name), globalFile)
+		g, err := readObject(file)
+		if err != nil || g == nil {
+			continue
+		}
+		delete(g, "oauthAccount")
+		if out, err := json.MarshalIndent(g, "", "  "); err == nil {
+			os.WriteFile(file, out, 0o600)
+		}
+	}
+}
+
 func Label(name string) string {
 	if name == "" {
 		return "default"

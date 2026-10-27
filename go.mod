@@ -1,4 +1,4 @@
-module github.com/benteven/claude-deck
+module github.com/benteven/deckhand
 
 go 1.27.2
 

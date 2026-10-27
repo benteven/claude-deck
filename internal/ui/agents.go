@@ -5,8 +5,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/benteven/claude-deck/internal/deck"
-	"github.com/benteven/claude-deck/internal/transcript"
+	"github.com/benteven/deckhand/internal/deck"
+	"github.com/benteven/deckhand/internal/transcript"
 )
 
 func visibleAgents(r deck.Row) []transcript.Agent {

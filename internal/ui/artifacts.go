@@ -9,8 +9,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/benteven/claude-deck/internal/deck"
-	"github.com/benteven/claude-deck/internal/textclean"
+	"github.com/benteven/deckhand/internal/deck"
+	"github.com/benteven/deckhand/internal/textclean"
 )
 
 const artifactRows = 8

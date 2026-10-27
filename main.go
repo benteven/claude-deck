@@ -10,19 +10,24 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/benteven/claude-deck/internal/accounts"
-	"github.com/benteven/claude-deck/internal/events"
-	"github.com/benteven/claude-deck/internal/paths"
-	"github.com/benteven/claude-deck/internal/preview"
-	"github.com/benteven/claude-deck/internal/store"
-	"github.com/benteven/claude-deck/internal/tmux"
-	"github.com/benteven/claude-deck/internal/ui"
-	"github.com/benteven/claude-deck/internal/update"
+	"github.com/benteven/deckhand/internal/accounts"
+	"github.com/benteven/deckhand/internal/events"
+	"github.com/benteven/deckhand/internal/paths"
+	"github.com/benteven/deckhand/internal/preview"
+	"github.com/benteven/deckhand/internal/store"
+	"github.com/benteven/deckhand/internal/tmux"
+	"github.com/benteven/deckhand/internal/ui"
+	"github.com/benteven/deckhand/internal/update"
 )
 
 var version = "dev"
 
 func main() {
+	if moved, err := paths.MigrateHome(); err != nil {
+		fmt.Fprintln(os.Stderr, "warning: move config to", paths.DeckHome()+":", err)
+	} else if moved {
+		accounts.ForgetLogins(paths.DeckHome())
+	}
 	if len(os.Args) < 2 {
 		runLaunch()
 		return
@@ -43,7 +48,7 @@ func main() {
 	case "upgrade":
 		if err := upgrade(); err != nil {
 			client := tmux.Client{Socket: paths.Socket(), Conf: filepath.Join(paths.DeckHome(), "tmux.conf")}
-			client.Run("display-message", "-d", "10000", "claude-deck: "+err.Error())
+			client.Run("display-message", "-d", "10000", "deckhand: "+err.Error())
 		}
 	case "login":
 		if err := login(os.Args[2:]); err != nil {
@@ -124,7 +129,7 @@ func login(args []string) error {
 		args = args[1:]
 	}
 	if len(args) != 1 {
-		return fmt.Errorf("usage: claude-deck login <account>")
+		return fmt.Errorf("usage: deckhand login <account>")
 	}
 	err := loginAccount(args[0])
 	if err != nil {
@@ -199,7 +204,7 @@ func reload() error {
 		return err
 	}
 	if !client.HasLayout() {
-		return fmt.Errorf("claude-deck is not running")
+		return fmt.Errorf("deckhand is not running")
 	}
 	return client.Reload(exe, "")
 }
@@ -207,7 +212,7 @@ func reload() error {
 func launch() error {
 	if os.Getenv("TMUX") != "" {
 		cfg, _ := store.LoadConfig(paths.DeckHome())
-		return fmt.Errorf("claude-deck uses %s as its key and cannot run inside tmux. Run it in a plain terminal, or set \"prefix\" in %s.", cfg.Prefix, filepath.Join(paths.DeckHome(), "config.json"))
+		return fmt.Errorf("deckhand uses %s as its key and cannot run inside tmux. Run it in a plain terminal, or set \"prefix\" in %s.", cfg.Prefix, filepath.Join(paths.DeckHome(), "config.json"))
 	}
 	client, cfg, exe, err := setup()
 	if err != nil {

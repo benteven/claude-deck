@@ -2,29 +2,29 @@
 set -eu
 
 main() {
-	repo="benteven/claude-deck"
-	bin_dir="${CLAUDE_DECK_BIN_DIR:-$HOME/.local/bin}"
-	base_url="${CLAUDE_DECK_BASE_URL:-}"
+	repo="benteven/deckhand"
+	bin_dir="${DECKHAND_BIN_DIR:-${CLAUDE_DECK_BIN_DIR:-$HOME/.local/bin}}"
+	base_url="${DECKHAND_BASE_URL:-}"
 
 	fail() {
-		printf 'claude-deck install: %s\n' "$1" >&2
+		printf 'deckhand install: %s\n' "$1" >&2
 		exit 1
 	}
 
-	os="${CLAUDE_DECK_OS:-$(uname -s | tr '[:upper:]' '[:lower:]')}"
+	os="${DECKHAND_OS:-$(uname -s | tr '[:upper:]' '[:lower:]')}"
 	case "$os" in
 	darwin | linux) ;;
 	*) fail "unsupported os: $os" ;;
 	esac
 
-	arch="${CLAUDE_DECK_ARCH:-$(uname -m)}"
+	arch="${DECKHAND_ARCH:-$(uname -m)}"
 	case "$arch" in
 	x86_64 | amd64) arch=amd64 ;;
 	aarch64 | arm64) arch=arm64 ;;
 	*) fail "unsupported architecture: $arch" ;;
 	esac
 
-	version="${CLAUDE_DECK_VERSION:-}"
+	version="${DECKHAND_VERSION:-}"
 	if [ -z "$version" ]; then
 		api="https://api.github.com/repos/$repo/releases/latest"
 		version=$(curl -fsSL "$api" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
@@ -36,7 +36,7 @@ main() {
 		base_url="https://github.com/$repo/releases/download/v$version"
 	fi
 
-	name="claude-deck_${version}_${os}_${arch}.tar.gz"
+	name="deckhand_${version}_${os}_${arch}.tar.gz"
 	tmp=$(mktemp -d)
 	trap 'rm -rf "$tmp"' EXIT
 
@@ -57,9 +57,12 @@ main() {
 
 	tar -xzf "$tmp/$name" -C "$tmp"
 	mkdir -p "$bin_dir"
-	install -m 755 "$tmp/${name%.tar.gz}/claude-deck" "$bin_dir/claude-deck"
+	install -m 755 "$tmp/${name%.tar.gz}/deckhand" "$bin_dir/deckhand"
+	if [ -e "$bin_dir/claude-deck" ] || [ -L "$bin_dir/claude-deck" ]; then
+		ln -sf deckhand "$bin_dir/claude-deck"
+	fi
 
-	printf 'installed %s to %s/claude-deck\n' "$version" "$bin_dir"
+	printf 'installed %s to %s/deckhand\n' "$version" "$bin_dir"
 
 	command -v tmux >/dev/null 2>&1 || printf 'warning: tmux not found. install tmux with your package manager\n' >&2
 	command -v claude >/dev/null 2>&1 || printf 'warning: claude not found on PATH. install Claude Code before you start sessions\n' >&2
