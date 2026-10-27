@@ -245,6 +245,7 @@ type model struct {
 	del      *deleteDialog
 	restart  *restartDialog
 	handoff  *handoffDialog
+	help     *helpScreen
 	handoffs map[string]*pendingHandoff
 
 	agentMode bool
@@ -444,6 +445,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.handoff != nil {
 			return m, m.handoffKey(msg)
 		}
+		if m.help != nil {
+			return m, m.helpKey(msg)
+		}
 		if m.picker != nil {
 			return m, m.pickerKey(msg)
 		}
@@ -565,6 +569,9 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 	case "Q":
 		m.quit = &quitDialog{count: len(m.liveRows())}
 		return m.zoom(true)
+	case "?":
+		m.help = &helpScreen{}
+		return m.zoom(true)
 	case "U":
 		exe, err := os.Executable()
 		if err != nil {
@@ -578,7 +585,7 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (m *model) dialogOpen() bool {
-	return m.prompt != nil || m.picker != nil || m.rename != nil || m.arts != nil || m.takeover != nil || m.quit != nil || m.del != nil || m.restart != nil || m.handoff != nil
+	return m.prompt != nil || m.picker != nil || m.rename != nil || m.arts != nil || m.takeover != nil || m.quit != nil || m.del != nil || m.restart != nil || m.handoff != nil || m.help != nil
 }
 
 func (m *model) liveRows() []deck.Row {

@@ -58,6 +58,7 @@ From anywhere:
 | `ctrl-j` / `ctrl-k` | Next or previous session |
 | `ctrl-b 1` ... `ctrl-b 9` | Go to session 1 to 9 |
 | `ctrl-b <` / `ctrl-b >` | Narrower or wider list |
+| `ctrl-b ?` | Show all keys |
 | `ctrl-b ctrl-b`, `ctrl-b ctrl-j`, `ctrl-b ctrl-k` | Send that key to Claude Code |
 
 In the list:
@@ -69,6 +70,7 @@ In the list:
 | Esc | Back to the session you came from |
 | `1` ... `9` | Go to that session |
 | Tab | Switch between Active and Suspended |
+| `?` | Show all keys |
 | `/` | Search names, prompts, folders, branches and PR numbers |
 | `n` | New session in a recent folder |
 | `s` | Suspend: rename it, then stop it |
