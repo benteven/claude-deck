@@ -4,6 +4,12 @@ A terminal app for people who run many Claude Code sessions at once.
 
 Running sessions sit in a list on the left with the live session on the right. Sessions you close stay findable: newest first, searchable, with their last known state shown in gray. Resume one with Enter.
 
+![Active sessions with the live session on the right](https://github.com/user-attachments/assets/69656439-4a51-4d2a-939f-f109e43e0e70)
+
+![Suspended sessions with the last known state in gray](https://github.com/user-attachments/assets/ab4f5043-9b47-468b-a322-765acfab3eb9)
+
+The screenshots use made-up sessions.
+
 deckhand is not made by or affiliated with Anthropic.
 
 ## Install
