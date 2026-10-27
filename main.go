@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/benteven/claude-deck/internal/accounts"
 	"github.com/benteven/claude-deck/internal/events"
 	"github.com/benteven/claude-deck/internal/paths"
 	"github.com/benteven/claude-deck/internal/preview"
@@ -43,6 +44,11 @@ func main() {
 		if err := upgrade(); err != nil {
 			client := tmux.Client{Socket: paths.Socket(), Conf: filepath.Join(paths.DeckHome(), "tmux.conf")}
 			client.Run("display-message", "-d", "10000", "claude-deck: "+err.Error())
+		}
+	case "login":
+		if err := login(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
 		}
 	case "version":
 		fmt.Println(version)
@@ -110,6 +116,45 @@ func runHook() {
 	if err := events.RunHook(filepath.Join(paths.DeckHome(), "events"), os.Stdin, time.Now()); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
+}
+
+func login(args []string) error {
+	wait := len(args) > 0 && args[0] == "--wait"
+	if wait {
+		args = args[1:]
+	}
+	if len(args) != 1 {
+		return fmt.Errorf("usage: claude-deck login <account>")
+	}
+	err := loginAccount(args[0])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+	if wait {
+		fmt.Print("\nPress Enter to go back to the list.")
+		fmt.Scanln()
+		return nil
+	}
+	return err
+}
+
+func loginAccount(name string) error {
+	dir, err := accounts.Prepare(paths.DeckHome(), paths.ClaudeHome(), name)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(paths.ClaudeCommand(), "auth", "login")
+	cmd.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+dir)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	email := accounts.Email(filepath.Join(dir, ".claude.json"))
+	if email == "" {
+		return fmt.Errorf("%s has no login yet", name)
+	}
+	fmt.Printf("\n%s is logged in as %s.\n", name, email)
+	return nil
 }
 
 func runLaunch() {

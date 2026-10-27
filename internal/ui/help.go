@@ -38,6 +38,7 @@ func helpSections(prefix string) []helpSection {
 			{"r", "Rename"},
 			{"R", "Restart the session in place"},
 			{"c", "Hand off: save state, /clear, read it back"},
+			{"A", "Switch account, for this session or all"},
 			{"g", "Agent mode: step through subagents"},
 			{"t", "Take over a session from another terminal"},
 			{"o", "Open the pull requests"},

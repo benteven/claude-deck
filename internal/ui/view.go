@@ -81,6 +81,8 @@ func (m *model) View() tea.View {
 		content = m.handoff.view(w, h)
 	case m.help != nil:
 		content = m.helpView(w, h)
+	case m.accounts != nil:
+		content = m.accountsView(w, h)
 	default:
 		content = m.listView(w, h)
 	}
@@ -115,9 +117,9 @@ func (m *model) layout(w, h int) (blocks [][]string, hint string, room int) {
 			blocks = append(blocks, suspendedLines(r, w, now, i == m.cursor, m.focused, m.prState))
 		case r.Kind == deck.Elsewhere && !header:
 			header = true
-			blocks = append(blocks, append([]string{gray.Render("Elsewhere")}, rowLines(r, w, i == m.cursor, m.focused, m.agentAt(i, r), m.prState)...))
+			blocks = append(blocks, append([]string{gray.Render("Elsewhere")}, rowLines(r, w, i == m.cursor, m.focused, m.agentAt(i, r), m.prState, m.accountTag(r))...))
 		default:
-			blocks = append(blocks, rowLines(r, w, i == m.cursor, m.focused, m.agentAt(i, r), m.prState))
+			blocks = append(blocks, rowLines(r, w, i == m.cursor, m.focused, m.agentAt(i, r), m.prState, m.accountTag(r)))
 		}
 		if m.rename != nil && r.SessionID == m.rename.id {
 			last := blocks[len(blocks)-1]
@@ -268,7 +270,7 @@ func selectionBar(selected, focused bool) string {
 	}
 }
 
-func rowLines(r deck.Row, w int, selected, focused bool, agent int, prState func(string) string) []string {
+func rowLines(r deck.Row, w int, selected, focused bool, agent int, prState func(string) string, account string) []string {
 	if r.Kind == deck.Stale {
 		return staleLines(r, w, selected, focused, prState)
 	}
@@ -282,7 +284,11 @@ func rowLines(r deck.Row, w int, selected, focused bool, agent int, prState func
 	case r.Kind == deck.Elsewhere:
 		mark = " " + gray.Render("elsewhere")
 	}
-	lines := []string{nameLine(r.Name, white, mark, r.Num, r.Remote, inner), contextLine(r.Summary.ContextPercent())}
+	ctx := contextLine(r.Summary.ContextPercent())
+	if account != "" {
+		ctx += gray.Render(" · " + account)
+	}
+	lines := []string{nameLine(r.Name, white, mark, r.Num, r.Remote, inner), ctx}
 	lines = append(lines, agentLines(r.Agents, inner, true)...)
 
 	var extra []string
@@ -483,6 +489,7 @@ func (m *model) listHint(w int) string {
 			text = addItem(text, "g agents", w)
 		}
 	}
+	text = addItem(text, "A account", w)
 	text = addItem(text, "U upgrade", w)
 	return text
 }

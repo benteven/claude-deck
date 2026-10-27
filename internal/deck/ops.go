@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/benteven/claude-deck/internal/accounts"
 	"github.com/benteven/claude-deck/internal/paths"
 	"github.com/benteven/claude-deck/internal/store"
 	"github.com/benteven/claude-deck/internal/tmux"
@@ -20,11 +21,20 @@ type Ops struct {
 	T         tmux.Client
 	Cfg       store.Config
 	HooksPath string
+	Home      string
 }
 
-func (o Ops) Start(cwd, sessionID, name string, resume bool) (string, error) {
+func (o Ops) Start(cwd, sessionID, name string, resume bool, account string) (string, error) {
 	if info, err := os.Stat(cwd); err != nil || !info.IsDir() {
 		return "", fmt.Errorf("folder not found: %s", cwd)
+	}
+	newWindow := []string{"new-window", "-d", "-P", "-F", "#{pane_id}", "-t", tmux.BgSession + ":"}
+	if account != "" {
+		dir, err := accounts.Prepare(o.Home, paths.ClaudeHome(), account)
+		if err != nil {
+			return "", err
+		}
+		newWindow = append(newWindow, "-e", "CLAUDE_CONFIG_DIR="+dir)
 	}
 	args := []string{paths.ClaudeCommand()}
 	if resume {
@@ -46,17 +56,27 @@ func (o Ops) Start(cwd, sessionID, name string, resume bool) (string, error) {
 	}
 	command := tmux.ShellQuote(shell) + " -lc " + tmux.ShellQuote("exec "+strings.Join(args, " "))
 
-	newWindow := []string{"new-window", "-d", "-P", "-F", "#{pane_id}", "-t", tmux.BgSession + ":"}
 	newWindow = append(newWindow, "-c", strings.ReplaceAll(cwd, "#", "##"), command)
 	paneID, err := o.T.Run(newWindow...)
 	if err != nil {
 		return "", err
 	}
 	paneID = strings.TrimSpace(paneID)
-	if _, err := o.T.Run("set-option", "-p", "-t", paneID, "@deck-session", sessionID); err != nil {
+	if _, err := o.T.Run("set-option", "-p", "-t", paneID, "@deck-session", sessionID, ";", "set-option", "-p", "-t", paneID, "@deck-account", account); err != nil {
 		return paneID, err
 	}
 	return paneID, nil
+}
+
+func (o Ops) Login(exe, account string) (string, error) {
+	command := tmux.ShellQuote(exe) + " login --wait " + tmux.ShellQuote(account)
+	paneID, err := o.T.Run("new-window", "-d", "-P", "-F", "#{pane_id}", "-t", tmux.BgSession+":", command)
+	if err != nil {
+		return "", err
+	}
+	paneID = strings.TrimSpace(paneID)
+	_, err = o.T.Run("set-option", "-p", "-t", paneID, "@deck-role", "login")
+	return paneID, err
 }
 
 func (o Ops) Show(paneID string) error {

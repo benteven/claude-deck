@@ -76,6 +76,7 @@ In the list:
 | `s` | Suspend: rename it, then stop it |
 | `r` | Rename |
 | `R` | Restart the session in place, for example after Claude Code updates |
+| `A` | Switch account: Enter for this session, `A` for all sessions; busy sessions switch when idle |
 | `c` | Hand off: Claude writes its state to a note, the deck runs `/clear`, then Claude reads the note back |
 | `g` | Agent mode: `j`/`k` also step through subagents and show the live subagent transcript; Enter opens the parent session |
 | `t` | Take over a session running in another terminal |
@@ -87,6 +88,10 @@ In the list:
 | `Q` | Stop all sessions and quit |
 
 Run `claude-deck` again to come back to running sessions. After an upgrade, this also reloads the list with the new version, and `claude-deck reload` does the same from any shell. The list checks GitHub for a new release every 6 hours and shows a line when one is out. After a restart, sessions that were active show in gray and the app offers to resume them.
+
+### Accounts
+
+Use more than one Claude subscription. Press `A`, pick "+ add account", give it a name, and log in. You can also run `claude-deck login <name>` in a terminal. Each account is a config folder in `~/.config/claude-deck/accounts/<name>`, used as `CLAUDE_CONFIG_DIR`. It links to everything in `~/.claude` (transcripts, settings, skills, plugins) except the login, so `--resume` works on any account. The login is kept apart: Claude Code gives each config folder its own Keychain entry. Rows on another account than the default show its name after the context bar. Switching restarts the session in place with `--resume`.
 
 ## How it works
 
