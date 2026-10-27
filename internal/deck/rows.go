@@ -34,6 +34,7 @@ type Row struct {
 	Summary         transcript.Summary
 	Waiting         bool
 	Busy            bool
+	Asking          bool
 	Remote          bool
 	LastInteraction time.Time
 	Agents          []transcript.Agent
@@ -76,6 +77,7 @@ func Build(in Inputs) (active, suspended []Row) {
 			Summary:         sum,
 			Waiting:         ev.Waiting(),
 			Busy:            isLive && ls.Status == "busy",
+			Asking:          isLive && ls.Status == "waiting",
 			Remote:          isLive && ls.BridgeID != "",
 			LastInteraction: latest(e.LastInteraction, sum.PromptedAt),
 			Agents:          cleanAgents(in.Agents[e.SessionID]),
