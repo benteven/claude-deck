@@ -83,6 +83,8 @@ func (m *model) View() tea.View {
 		content = m.helpView(w, h)
 	case m.accounts != nil:
 		content = m.accountsView(w, h)
+	case m.cycle != nil:
+		content = m.switcherView(w, h)
 	default:
 		content = m.listView(w, h)
 	}
@@ -118,9 +120,9 @@ func (m *model) layout(w, h int) (blocks [][]string, hint string, room int) {
 			block = append(block, gray.Render(ansi.Truncate(header, w, "…")))
 		}
 		if m.mode == modeSuspended {
-			block = append(block, suspendedLines(r, w, now, i == m.cursor, m.focused, m.prState)...)
+			block = append(block, suspendedLines(r, w, now, i == m.cursor, m.focused, m.prState, m.nameStyle(r))...)
 		} else {
-			block = append(block, rowLines(r, w, i == m.cursor, m.focused, m.agentAt(i, r), m.prState, m.accountTag(r))...)
+			block = append(block, rowLines(r, w, i == m.cursor, m.focused, m.agentAt(i, r), m.prState, m.accountTag(r), m.nameStyle(r))...)
 		}
 		blocks = append(blocks, block)
 		if m.rename != nil && r.SessionID == m.rename.id {
@@ -186,7 +188,7 @@ func (m *model) searchLine(w int) string {
 	return ansi.Truncate(yellow.Render("/")+m.query, w, "…")
 }
 
-func suspendedLines(r deck.Row, w int, now time.Time, selected, focused bool, prState func(string) string) []string {
+func suspendedLines(r deck.Row, w int, now time.Time, selected, focused bool, prState func(string) string, name lipgloss.Style) []string {
 	bar := selectionBar(selected, focused)
 	inner := max(w-2, 1)
 	meta := []string{gray.Render(ago(now, r.LastInteraction))}
@@ -197,7 +199,7 @@ func suspendedLines(r deck.Row, w int, now time.Time, selected, focused bool, pr
 		meta = append(meta, prText(pr, prState(pr.URL), true))
 	}
 	lines := []string{
-		white.Render(ansi.Truncate(r.Name, inner, "…")),
+		name.Render(ansi.Truncate(r.Name, inner, "…")),
 		fitItems(meta, inner),
 	}
 	for i, l := range lines {
@@ -271,7 +273,7 @@ func selectionBar(selected, focused bool) string {
 	}
 }
 
-func rowLines(r deck.Row, w int, selected, focused bool, agent int, prState func(string) string, account string) []string {
+func rowLines(r deck.Row, w int, selected, focused bool, agent int, prState func(string) string, account string, name lipgloss.Style) []string {
 	if r.Kind == deck.Stale {
 		return staleLines(r, w, selected, focused, prState)
 	}
@@ -289,7 +291,7 @@ func rowLines(r deck.Row, w int, selected, focused bool, agent int, prState func
 	if account != "" {
 		ctx += gray.Render(" · " + account)
 	}
-	lines := []string{nameLine(r.Name, white, mark, r.Num, r.Remote, inner), ctx}
+	lines := []string{nameLine(r.Name, name, mark, r.Num, r.Remote, inner), ctx}
 	lines = append(lines, agentLines(r.Agents, inner, true)...)
 
 	var extra []string

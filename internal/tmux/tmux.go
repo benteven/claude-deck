@@ -18,6 +18,7 @@ const (
 	WidthOption = "@deck-list-width"
 	NextKey     = "\ue000"
 	PrevKey     = "\ue001"
+	LastKey     = "\ue002"
 )
 
 type Client struct {
@@ -189,7 +190,9 @@ func WriteConf(path string, cfg store.Config) error {
 		"bind -T deck Any send-keys -t =deck:main.0",
 		slotKey("C-j"),
 		slotKey("C-k"),
-		slotKey(p),
+		slotKey("C-q"),
+		fmt.Sprintf(`bind -n C-q send-keys -t =deck:main.0 -l %s`, LastKey),
+		fmt.Sprintf(`bind -T deck %s send-keys -t =deck:main.0 -l %s`, p, LastKey),
 		switchKey("C-j", NextKey),
 		switchKey("C-k", PrevKey),
 	}
