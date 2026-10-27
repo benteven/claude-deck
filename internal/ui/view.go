@@ -11,10 +11,10 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/benteven/claude-deck/internal/deck"
-	"github.com/benteven/claude-deck/internal/textclean"
-	"github.com/benteven/claude-deck/internal/transcript"
-	"github.com/benteven/claude-deck/internal/update"
+	"github.com/benteven/deckhand/internal/deck"
+	"github.com/benteven/deckhand/internal/textclean"
+	"github.com/benteven/deckhand/internal/transcript"
+	"github.com/benteven/deckhand/internal/update"
 )
 
 const (

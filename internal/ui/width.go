@@ -7,8 +7,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/benteven/claude-deck/internal/store"
-	"github.com/benteven/claude-deck/internal/tmux"
+	"github.com/benteven/deckhand/internal/store"
+	"github.com/benteven/deckhand/internal/tmux"
 )
 
 const widthStep = 4

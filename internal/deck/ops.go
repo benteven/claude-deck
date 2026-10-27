@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/benteven/claude-deck/internal/accounts"
-	"github.com/benteven/claude-deck/internal/paths"
-	"github.com/benteven/claude-deck/internal/store"
-	"github.com/benteven/claude-deck/internal/tmux"
-	"github.com/benteven/claude-deck/internal/transcript"
+	"github.com/benteven/deckhand/internal/accounts"
+	"github.com/benteven/deckhand/internal/paths"
+	"github.com/benteven/deckhand/internal/store"
+	"github.com/benteven/deckhand/internal/tmux"
+	"github.com/benteven/deckhand/internal/transcript"
 )
 
 type Ops struct {

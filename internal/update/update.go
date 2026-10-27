@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	repo       = "benteven/claude-deck"
+	repo       = "benteven/deckhand"
 	checkEvery = 6 * time.Hour
 )
 
@@ -111,12 +111,12 @@ func parse(v string) ([3]int, bool) {
 func Install(exe, current string) (string, error) {
 	if prefix := brewPrefix(exe); prefix != "" {
 		brew := filepath.Join(prefix, "bin", "brew")
-		for _, args := range [][]string{{"update", "--quiet"}, {"upgrade", "claude-deck"}} {
+		for _, args := range [][]string{{"update", "--quiet"}, {"upgrade", "deckhand"}} {
 			if out, err := exec.Command(brew, args...).CombinedOutput(); err != nil {
 				return "", fmt.Errorf("brew %s: %v: %s", args[0], err, lastLine(out))
 			}
 		}
-		return filepath.Join(prefix, "bin", "claude-deck"), nil
+		return filepath.Join(prefix, "bin", "deckhand"), nil
 	}
 	if _, ok := parse(current); !ok {
 		return exe, nil
@@ -131,7 +131,7 @@ func Install(exe, current string) (string, error) {
 	}
 	cmd := exec.Command("sh")
 	cmd.Stdin = bytes.NewReader(script)
-	cmd.Env = append(os.Environ(), "CLAUDE_DECK_BIN_DIR="+filepath.Dir(real))
+	cmd.Env = append(os.Environ(), "DECKHAND_BIN_DIR="+filepath.Dir(real))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("install: %v: %s", err, lastLine(out))
 	}

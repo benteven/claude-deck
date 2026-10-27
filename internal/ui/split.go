@@ -6,8 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/benteven/claude-deck/internal/accounts"
-	"github.com/benteven/claude-deck/internal/deck"
+	"github.com/benteven/deckhand/internal/accounts"
+	"github.com/benteven/deckhand/internal/deck"
 )
 
 func (m *model) group(r deck.Row) (string, bool) {

@@ -15,11 +15,13 @@ export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecki
 tap=$(mktemp -d)
 git clone --depth 1 git@github.com:benteven/homebrew-tap.git "$tap"
 mkdir -p "$tap/Formula"
-sed -e "s|@URL@|$url|" -e "s|@SHA@|$sha|" .github/claude-deck.rb > "$tap/Formula/claude-deck.rb"
+sed -e "s|@URL@|$url|" -e "s|@SHA@|$sha|" .github/deckhand.rb > "$tap/Formula/deckhand.rb"
+printf '{\n  "claude-deck": "deckhand"\n}\n' > "$tap/formula_renames.json"
 
 cd "$tap"
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-git add Formula/claude-deck.rb
-git commit -m "claude-deck $version"
+git rm -q --ignore-unmatch Formula/claude-deck.rb
+git add Formula/deckhand.rb formula_renames.json
+git commit -m "deckhand $version"
 git push origin HEAD:main

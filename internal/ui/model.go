@@ -16,16 +16,16 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/benteven/claude-deck/internal/accounts"
-	"github.com/benteven/claude-deck/internal/deck"
-	"github.com/benteven/claude-deck/internal/events"
-	"github.com/benteven/claude-deck/internal/gh"
-	"github.com/benteven/claude-deck/internal/live"
-	"github.com/benteven/claude-deck/internal/paths"
-	"github.com/benteven/claude-deck/internal/store"
-	"github.com/benteven/claude-deck/internal/tmux"
-	"github.com/benteven/claude-deck/internal/transcript"
-	"github.com/benteven/claude-deck/internal/update"
+	"github.com/benteven/deckhand/internal/accounts"
+	"github.com/benteven/deckhand/internal/deck"
+	"github.com/benteven/deckhand/internal/events"
+	"github.com/benteven/deckhand/internal/gh"
+	"github.com/benteven/deckhand/internal/live"
+	"github.com/benteven/deckhand/internal/paths"
+	"github.com/benteven/deckhand/internal/store"
+	"github.com/benteven/deckhand/internal/tmux"
+	"github.com/benteven/deckhand/internal/transcript"
+	"github.com/benteven/deckhand/internal/update"
 )
 
 const (
@@ -588,7 +588,7 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return nil
 	case "q":
-		text := fmt.Sprintf("claude-deck closed, %s still running", sessionCount(len(m.liveRows())))
+		text := fmt.Sprintf("deckhand closed, %s still running", sessionCount(len(m.liveRows())))
 		return m.tmux("detach-client", "-E", "echo "+tmux.ShellQuote(text))
 	case "Q":
 		m.quit = &quitDialog{count: len(m.liveRows())}
@@ -697,7 +697,7 @@ func (m *model) openPRs(r deck.Row) tea.Cmd {
 }
 
 func openURLs(urls []string) tea.Cmd {
-	opener := os.Getenv("CLAUDE_DECK_OPEN")
+	opener := os.Getenv("DECKHAND_OPEN")
 	if opener == "" {
 		opener = defaultOpener()
 	}
@@ -722,7 +722,7 @@ func (m *model) stopAll() tea.Cmd {
 			wg.Go(func() { ops.Stop(r.PaneID, r.Busy) })
 		}
 		wg.Wait()
-		wait := fmt.Sprintf(`i=0; while tmux -L "%s" list-sessions >/dev/null 2>&1; do i=$((i+1)); [ $i -ge 50 ] && exit 1; sleep 0.1; done; echo "claude-deck stopped"`, ops.T.Socket)
+		wait := fmt.Sprintf(`i=0; while tmux -L "%s" list-sessions >/dev/null 2>&1; do i=$((i+1)); [ $i -ge 50 ] && exit 1; sleep 0.1; done; echo "deckhand stopped"`, ops.T.Socket)
 		if _, err := ops.T.Run("detach-client", "-E", "sh -c "+tmux.ShellQuote(wait)); err != nil {
 			return quitFailedMsg{err}
 		}

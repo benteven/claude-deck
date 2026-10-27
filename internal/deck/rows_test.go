@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benteven/claude-deck/internal/store"
-	"github.com/benteven/claude-deck/internal/transcript"
+	"github.com/benteven/deckhand/internal/store"
+	"github.com/benteven/deckhand/internal/transcript"
 )
 
 func ids(rows []Row) []string {

@@ -9,9 +9,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/benteven/claude-deck/internal/accounts"
-	"github.com/benteven/claude-deck/internal/deck"
-	"github.com/benteven/claude-deck/internal/tmux"
+	"github.com/benteven/deckhand/internal/accounts"
+	"github.com/benteven/deckhand/internal/deck"
+	"github.com/benteven/deckhand/internal/tmux"
 )
 
 type accountDialog struct {
