@@ -79,6 +79,8 @@ func (m *model) View() tea.View {
 		content = m.restart.view(w, h)
 	case m.handoff != nil:
 		content = m.handoff.view(w, h)
+	case m.help != nil:
+		content = m.helpView(w, h)
 	default:
 		content = m.listView(w, h)
 	}
@@ -452,12 +454,12 @@ func (m *model) hintLine(w int) string {
 }
 
 func (m *model) listHint(w int) string {
-	lines := [][]string{{"enter open", "n new", "s suspend", "Q quit"}, {"/ search", "tab suspended", "q close"}}
+	lines := [][]string{{"enter open", "n new", "s suspend", "Q quit"}, {"? help", "/ search", "tab suspended", "q close"}}
 	switch {
 	case m.mode == modeSuspended:
-		lines = [][]string{{"enter resume", "r rename", "tab active"}, {"d delete", "/ search", "q close", "Q quit"}}
+		lines = [][]string{{"enter resume", "r rename", "tab active"}, {"? help", "d delete", "/ search", "q close", "Q quit"}}
 	case m.onElsewhere():
-		lines = [][]string{{"t take over", "n new", "q close", "Q quit"}, {"/ search", "tab suspended"}}
+		lines = [][]string{{"t take over", "n new", "q close", "Q quit"}, {"? help", "/ search", "tab suspended"}}
 	}
 	fitted := make([]string, len(lines))
 	for i, items := range lines {
