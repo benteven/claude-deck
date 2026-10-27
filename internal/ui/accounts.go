@@ -294,7 +294,7 @@ func (m *model) switchAll(name string) tea.Cmd {
 }
 
 func waitsForIdle(r deck.Row) bool {
-	return r.Busy || r.Waiting
+	return r.Busy || r.Asking
 }
 
 func (m *model) queueSwitch(rows []deck.Row, elsewhere int) tea.Cmd {

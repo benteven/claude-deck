@@ -16,6 +16,7 @@ type Session struct {
 	Status     string `json:"status"`
 	StartedAt  int64  `json:"startedAt"`
 	BridgeID   string `json:"bridgeSessionId"`
+	Kind       string `json:"kind"`
 }
 
 func Running(claudeHome string) ([]Session, error) {
@@ -30,7 +31,7 @@ func Running(claudeHome string) ([]Session, error) {
 			continue
 		}
 		var s Session
-		if json.Unmarshal(data, &s) != nil || s.PID <= 0 || s.SessionID == "" {
+		if json.Unmarshal(data, &s) != nil || s.PID <= 0 || s.SessionID == "" || s.Kind == "bg" {
 			continue
 		}
 		if err := syscall.Kill(s.PID, 0); err != nil && err != syscall.EPERM {
