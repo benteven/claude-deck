@@ -14,6 +14,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/benteven/claude-deck/internal/accounts"
 	"github.com/benteven/claude-deck/internal/deck"
 	"github.com/benteven/claude-deck/internal/events"
 	"github.com/benteven/claude-deck/internal/live"
@@ -386,6 +387,7 @@ func (m *model) trashed(msg trashedMsg) tea.Cmd {
 	m.gone[msg.id] = true
 	m.err = msg.err
 	delete(m.state.Names, msg.id)
+	delete(m.state.Accounts, msg.id)
 	delete(m.in.Summaries, msg.id)
 	m.in.Files = m.withoutGone(m.in.Files)
 	m.rebuild()
@@ -437,14 +439,19 @@ func (m *model) restartKey(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (m *model) restartRow(r deck.Row) tea.Cmd {
+	account := m.state.AccountFor(r.SessionID)
 	if m.resuming[r.SessionID] {
+		return nil
+	}
+	if !accounts.LoggedIn(m.home, account) {
+		m.err = fmt.Errorf("account %s is not logged in, press A to log in", account)
 		return nil
 	}
 	m.resuming[r.SessionID] = true
 	m.markEnding(r.SessionID)
 	delete(m.in.Panes, r.SessionID)
 	m.rebuild()
-	ops, account := m.ops, m.state.AccountFor(r.SessionID)
+	ops := m.ops
 	name := m.state.Names[r.SessionID]
 	run := func() tea.Msg {
 		if err := ops.Stop(r.PaneID, r.Busy); err != nil {

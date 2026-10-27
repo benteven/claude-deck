@@ -1,6 +1,8 @@
 package accounts
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -46,5 +48,43 @@ func TestPrepareSharesAllButLogin(t *testing.T) {
   }
 }`; string(data) != want {
 		t.Errorf("seed = %s", data)
+	}
+}
+
+func TestPrepareSyncsTrust(t *testing.T) {
+	root := t.TempDir()
+	claudeHome := filepath.Join(root, ".claude")
+	global := filepath.Join(root, ".claude.json")
+	deckHome := filepath.Join(root, "deck")
+	write := func(path, data string) {
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(global, `{"projects":{"/a":{"hasTrustDialogAccepted":false}}}`)
+	if _, err := Prepare(deckHome, claudeHome, "work"); err != nil {
+		t.Fatal(err)
+	}
+	own := filepath.Join(Dir(deckHome, "work"), ".claude.json")
+	write(own, `{"oauthAccount":{"emailAddress":"w@x.y"},"projects":{"/a":{"allowedTools":["Bash"]}}}`)
+	write(global, `{"projects":{"/a":{"hasTrustDialogAccepted":true},"/b":{"hasTrustDialogAccepted":true}},"mcpServers":{"m":{"command":"x"}}}`)
+
+	if _, err := Prepare(deckHome, claudeHome, "work"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readObject(own)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"oauthAccount": `{"emailAddress":"w@x.y"}`,
+		"projects":     `{"/a":{"allowedTools":["Bash"],"hasTrustDialogAccepted":true},"/b":{"hasTrustDialogAccepted":true}}`,
+		"mcpServers":   `{"m":{"command":"x"}}`,
+	}
+	for k, v := range want {
+		var c bytes.Buffer
+		if err := json.Compact(&c, got[k]); err != nil || c.String() != v {
+			t.Errorf("%s = %s, want %s", k, got[k], v)
+		}
 	}
 }

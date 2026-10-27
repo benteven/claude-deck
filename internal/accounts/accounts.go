@@ -18,23 +18,17 @@ type Account struct {
 const globalFile = ".claude.json"
 
 var (
-	nameRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,23}$`)
-	private = map[string]bool{
-		".credentials.json":              true,
-		globalFile:                       true,
-		"remote-settings.json":           true,
-		"remote-settings.json.synced-at": true,
-		"mcp-needs-auth-cache.json":      true,
-		"stats-cache.json":               true,
-		"backups":                        true,
-		"cache":                          true,
-		"telemetry":                      true,
-		"statsig":                        true,
-	}
+	nameRe   = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,23}$`)
+	required = []string{"projects", "sessions"}
+	shared   = append([]string{
+		"settings.json", "CLAUDE.md", "keybindings.json", "history.jsonl",
+		"agents", "commands", "skills", "plugins", "hooks", "output-styles", "rules",
+		"todos", "plans", "tasks", "file-history", "shell-snapshots", "session-env", "paste-cache", "image-cache",
+	}, required...)
 )
 
 func ValidName(name string) bool {
-	return nameRe.MatchString(name)
+	return nameRe.MatchString(name) && name != "default"
 }
 
 func Dir(deckHome, name string) string {
@@ -73,6 +67,10 @@ func Email(file string) string {
 	return g.OAuthAccount.EmailAddress
 }
 
+func LoggedIn(deckHome, name string) bool {
+	return name == "" || Email(filepath.Join(Dir(deckHome, name), globalFile)) != ""
+}
+
 func Prepare(deckHome, claudeHome, name string) (string, error) {
 	if !ValidName(name) {
 		return "", fmt.Errorf("account name %q: use a-z, 0-9, - and _", name)
@@ -81,50 +79,135 @@ func Prepare(deckHome, claudeHome, name string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	entries, err := os.ReadDir(claudeHome)
-	if err != nil {
-		return "", err
+	for _, d := range required {
+		if err := os.MkdirAll(filepath.Join(claudeHome, d), 0o755); err != nil {
+			return "", err
+		}
 	}
-	for _, e := range entries {
-		link := filepath.Join(dir, e.Name())
-		if private[e.Name()] {
+	for _, e := range shared {
+		target, link := filepath.Join(claudeHome, e), filepath.Join(dir, e)
+		if _, err := os.Lstat(target); err != nil {
 			continue
 		}
 		if _, err := os.Lstat(link); err == nil {
 			continue
 		}
-		if err := os.Symlink(filepath.Join(claudeHome, e.Name()), link); err != nil {
+		if err := os.Symlink(target, link); err != nil {
 			return "", err
 		}
 	}
-	return dir, seed(filepath.Join(filepath.Dir(claudeHome), globalFile), filepath.Join(dir, globalFile))
+	return dir, syncGlobal(filepath.Join(filepath.Dir(claudeHome), globalFile), filepath.Join(dir, globalFile))
 }
 
-func seed(src, dst string) error {
-	if _, err := os.Stat(dst); err == nil {
-		return nil
-	}
-	g := map[string]json.RawMessage{}
-	data, err := os.ReadFile(src)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-	case err != nil:
-		return err
-	default:
-		if err := json.Unmarshal(data, &g); err != nil {
-			return err
+func Unshared(deckHome, claudeHome, name string) []string {
+	var out []string
+	for _, e := range shared {
+		info, err := os.Lstat(filepath.Join(Dir(deckHome, name), e))
+		if err == nil && info.Mode()&os.ModeSymlink == 0 {
+			if _, err := os.Lstat(filepath.Join(claudeHome, e)); err == nil {
+				out = append(out, e)
+			}
 		}
 	}
-	for k := range g {
-		if k == "oauthAccount" || k == "userID" || strings.Contains(strings.ToLower(k), "cache") {
-			delete(g, k)
-		}
-	}
-	out, err := json.MarshalIndent(g, "", "  ")
+	return out
+}
+
+func syncGlobal(src, dst string) error {
+	from, err := readObject(src)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, out, 0o600)
+	to, err := readObject(dst)
+	if err != nil {
+		return err
+	}
+	seeded := to == nil
+	if seeded {
+		to = map[string]json.RawMessage{}
+		for k, v := range from {
+			if k != "oauthAccount" && k != "userID" && !strings.Contains(strings.ToLower(k), "cache") {
+				to[k] = v
+			}
+		}
+	}
+	changed := false
+	for _, key := range []string{"projects", "mcpServers"} {
+		merged, ok, err := mergeEntries(from[key], to[key], key == "projects")
+		if err != nil {
+			return err
+		}
+		if ok {
+			to[key] = merged
+			changed = true
+		}
+	}
+	if !seeded && !changed {
+		return nil
+	}
+	out, err := json.MarshalIndent(to, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".claude.json-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(out); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), dst)
+}
+
+func readObject(path string) (map[string]json.RawMessage, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]json.RawMessage
+	return m, json.Unmarshal(data, &m)
+}
+
+func mergeEntries(from, to json.RawMessage, trust bool) (json.RawMessage, bool, error) {
+	if len(from) == 0 {
+		return nil, false, nil
+	}
+	var src, dst map[string]map[string]any
+	if err := json.Unmarshal(from, &src); err != nil {
+		return nil, false, nil
+	}
+	if len(to) > 0 {
+		if err := json.Unmarshal(to, &dst); err != nil {
+			return nil, false, nil
+		}
+	}
+	if dst == nil {
+		dst = map[string]map[string]any{}
+	}
+	changed := false
+	for k, v := range src {
+		cur, ok := dst[k]
+		switch {
+		case !ok:
+			dst[k] = v
+			changed = true
+		case trust && v["hasTrustDialogAccepted"] == true && cur["hasTrustDialogAccepted"] != true:
+			cur["hasTrustDialogAccepted"] = true
+			changed = true
+		}
+	}
+	if !changed {
+		return nil, false, nil
+	}
+	out, err := json.Marshal(dst)
+	return out, true, err
 }
 
 func Label(name string) string {

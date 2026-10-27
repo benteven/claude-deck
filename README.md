@@ -76,7 +76,7 @@ In the list:
 | `s` | Suspend: rename it, then stop it |
 | `r` | Rename |
 | `R` | Restart the session in place, for example after Claude Code updates |
-| `A` | Switch account: Enter for this session, `A` for all sessions; busy sessions switch when idle |
+| `A` | Switch account for this session or all sessions, add or remove accounts |
 | `c` | Hand off: Claude writes its state to a note, the deck runs `/clear`, then Claude reads the note back |
 | `g` | Agent mode: `j`/`k` also step through subagents and show the live subagent transcript; Enter opens the parent session |
 | `t` | Take over a session running in another terminal |
@@ -91,7 +91,11 @@ Run `claude-deck` again to come back to running sessions. After an upgrade, this
 
 ### Accounts
 
-Use more than one Claude subscription. Press `A`, pick "+ add account", give it a name, and log in. You can also run `claude-deck login <name>` in a terminal. Each account is a config folder in `~/.config/claude-deck/accounts/<name>`, used as `CLAUDE_CONFIG_DIR`. It links to everything in `~/.claude` (transcripts, settings, skills, plugins) except the login, so `--resume` works on any account. The login is kept apart: Claude Code gives each config folder its own Keychain entry. Rows on another account than the default show its name after the context bar. Switching restarts the session in place with `--resume`.
+Use more than one Claude subscription. Press `A`, pick "+ add account", give it a name, and log in. You can also run `claude-deck login <name>` in a terminal. In the list, Enter switches the session and `A` switches all sessions. `d` logs an account out and moves its folder to the Trash.
+
+Each account is a config folder in `~/.config/claude-deck/accounts/<name>`, used as `CLAUDE_CONFIG_DIR`. It links to the shared parts of `~/.claude` (transcripts, live sessions, settings, CLAUDE.md, agents, commands, skills, plugins, history), so `--resume` works on any account. The login and account caches stay apart; Claude Code gives each config folder its own Keychain entry. Trusted folders and MCP servers from `~/.claude.json` are copied to the account each time a session starts.
+
+A switch restarts the session in place. Sessions that are busy or wait for you switch when they are idle. Sessions running elsewhere are not switched.
 
 ## How it works
 

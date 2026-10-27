@@ -15,16 +15,30 @@ import (
 )
 
 type accountDialog struct {
-	row    deck.Row
-	hasRow bool
-	list   []accounts.Account
-	cursor int
-	naming bool
-	input  textinput.Model
+	row      deck.Row
+	hasRow   bool
+	list     []accounts.Account
+	unshared map[string][]string
+	cursor   int
+	naming   bool
+	removing string
+	input    textinput.Model
+}
+
+type accountRemovedMsg struct {
+	name string
+	err  error
 }
 
 func (m *model) openAccounts() tea.Cmd {
-	d := &accountDialog{list: accounts.List(m.home, m.claudeHome)}
+	if m.loginPane != "" {
+		m.hint = "Finish the login first"
+		return tea.Sequence(m.show(m.loginPane, "", false), m.focus(tmux.Slot))
+	}
+	d := &accountDialog{list: accounts.List(m.home, m.claudeHome), unshared: map[string][]string{}}
+	for _, a := range d.list[1:] {
+		d.unshared[a.Name] = accounts.Unshared(m.home, m.claudeHome, a.Name)
+	}
 	if r, ok := m.current(); ok && (r.Kind == deck.Live || r.Kind == deck.Suspended) {
 		d.row, d.hasRow = r, true
 	}
@@ -55,6 +69,23 @@ func (m *model) accountTag(r deck.Row) string {
 	return cur
 }
 
+func (m *model) accountUsers(name string) int {
+	n := 0
+	for _, r := range m.liveRows() {
+		if m.paneAccount[r.PaneID] == name || m.state.AccountFor(r.SessionID) == name {
+			n++
+		}
+	}
+	return n
+}
+
+func (m *model) accountsFooter(text string, w int) string {
+	if m.hint != "" {
+		return yellow.Render(ansi.Truncate(m.hint, w, "…"))
+	}
+	return gray.Render(ansi.Truncate(text, w, ""))
+}
+
 func (m *model) accountsView(w, h int) string {
 	d := m.accounts
 	if d.naming {
@@ -65,7 +96,16 @@ func (m *model) accountsView(w, h int) string {
 			"",
 			gray.Render(ansi.Truncate("Use a-z, 0-9, - and _. Then log in with that account.", w, "…")),
 		}
-		return page(body, gray.Render(ansi.Truncate("enter log in  esc cancel", w, "")), h)
+		return page(body, m.accountsFooter("enter log in  esc cancel", w), h)
+	}
+	if d.removing != "" {
+		body := []string{
+			white.Render(ansi.Truncate(`Remove account "`+d.removing+`"? (y/n)`, w, "…")),
+			"",
+			gray.Render(ansi.Truncate("The deck logs it out and moves its folder to the Trash.", w, "…")),
+			gray.Render(ansi.Truncate("Transcripts stay in ~/.claude.", w, "…")),
+		}
+		return page(body, gray.Render(ansi.Truncate("y remove  n cancel", w, "")), h)
 	}
 	title := "Accounts"
 	if d.hasRow {
@@ -79,7 +119,11 @@ func (m *model) accountsView(w, h int) string {
 	for i, a := range d.list {
 		label := accounts.Label(a.Name)
 		email := gray.Render(a.Email)
-		if a.Email == "" {
+		switch {
+		case a.Email != "":
+		case a.Name == "":
+			email = gray.Render("~/.claude")
+		default:
 			email = yellow.Render("not logged in")
 		}
 		var tags []string
@@ -94,41 +138,50 @@ func (m *model) accountsView(w, h int) string {
 			line += "  " + orange.Render(strings.Join(tags, ", "))
 		}
 		body = append(body, ansi.Truncate(line, w, "…"))
+		if u := d.unshared[a.Name]; len(u) > 0 {
+			body = append(body, ansi.Truncate("    "+yellow.Render("not shared with ~/.claude: "+strings.Join(u, ", ")), w, "…"))
+		}
 	}
 	body = append(body, ansi.Truncate(selectionBar(d.cursor == len(d.list), m.focused)+gray.Render("+ add account"), w, ""))
-	hint := "enter all sessions  esc cancel"
-	if d.hasRow {
-		hint = "enter this session  A all sessions  esc cancel"
-	}
+	return page(body, m.accountsFooter(d.hint(), w), h)
+}
+
+func (d *accountDialog) hint() string {
 	if d.cursor == len(d.list) {
-		hint = "enter add  esc cancel"
+		return "enter add  esc cancel"
 	}
-	return page(body, gray.Render(ansi.Truncate(hint, w, "")), h)
+	a := d.list[d.cursor]
+	if a.Name != "" && a.Email == "" {
+		return "enter log in  d remove  esc cancel"
+	}
+	text := "enter all sessions"
+	if d.hasRow {
+		text = "enter this session  A all sessions"
+	}
+	if a.Name != "" {
+		text += "  d remove"
+	}
+	return text + "  esc cancel"
 }
 
 func (m *model) accountsKey(msg tea.KeyPressMsg) tea.Cmd {
 	d := m.accounts
-	if d.naming {
+	switch {
+	case d.naming:
+		return m.namingKey(msg)
+	case d.removing != "":
+		name := d.removing
 		switch msg.String() {
-		case "esc":
-			d.naming = false
-			return nil
-		case "enter":
-			name := strings.TrimSpace(d.input.Value())
-			switch {
-			case !accounts.ValidName(name):
-				m.hint = "Use a-z, 0-9, - and _ in the name"
-				return nil
-			case accounts.Exists(m.home, name):
-				m.hint = name + " exists already"
-				return nil
-			}
+		case "y":
 			m.accounts = nil
-			return tea.Sequence(m.zoom(false), m.login(name))
+			home := m.home
+			return tea.Sequence(m.zoom(false), func() tea.Msg {
+				return accountRemovedMsg{name: name, err: deck.RemoveAccount(home, name)}
+			})
+		case "n", "esc":
+			d.removing = ""
 		}
-		var cmd tea.Cmd
-		d.input, cmd = d.input.Update(msg)
-		return cmd
+		return nil
 	}
 	switch msg.String() {
 	case "up", "k":
@@ -138,6 +191,16 @@ func (m *model) accountsKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "esc", "q":
 		m.accounts = nil
 		return m.zoom(false)
+	case "d":
+		if d.cursor == len(d.list) || d.list[d.cursor].Name == "" {
+			return nil
+		}
+		name := d.list[d.cursor].Name
+		if n := m.accountUsers(name); n > 0 {
+			m.hint = fmt.Sprintf("%s is used by %s, switch them first", name, sessionCount(n))
+			return nil
+		}
+		d.removing = name
 	case "enter", "A":
 		if d.cursor == len(d.list) {
 			if msg.String() == "A" {
@@ -148,14 +211,59 @@ func (m *model) accountsKey(msg tea.KeyPressMsg) tea.Cmd {
 			d.input.Prompt = ""
 			return d.input.Focus()
 		}
-		name := d.list[d.cursor].Name
+		a := d.list[d.cursor]
+		if !accounts.LoggedIn(m.home, a.Name) {
+			m.accounts = nil
+			return tea.Sequence(m.zoom(false), m.login(a.Name))
+		}
 		m.accounts = nil
 		if msg.String() == "A" || !d.hasRow {
-			return tea.Sequence(m.zoom(false), m.switchAll(name))
+			return tea.Sequence(m.zoom(false), m.switchAll(a.Name))
 		}
-		return tea.Sequence(m.zoom(false), m.switchOne(d.row, name))
+		return tea.Sequence(m.zoom(false), m.switchOne(d.row, a.Name))
 	}
 	return nil
+}
+
+func (m *model) namingKey(msg tea.KeyPressMsg) tea.Cmd {
+	d := m.accounts
+	switch msg.String() {
+	case "esc":
+		d.naming = false
+		return nil
+	case "enter":
+		name := strings.TrimSpace(d.input.Value())
+		switch {
+		case !accounts.ValidName(name):
+			m.hint = "Use a-z, 0-9, - and _ in the name, not default"
+			return nil
+		case accounts.Exists(m.home, name):
+			m.hint = name + " exists already"
+			return nil
+		}
+		m.accounts = nil
+		return tea.Sequence(m.zoom(false), m.login(name))
+	}
+	var cmd tea.Cmd
+	d.input, cmd = d.input.Update(msg)
+	return cmd
+}
+
+func (m *model) accountRemoved(msg accountRemovedMsg) tea.Cmd {
+	if msg.err != nil {
+		m.err = msg.err
+		return nil
+	}
+	if m.state.Account == msg.name {
+		m.state.Account = ""
+	}
+	for id, a := range m.state.Accounts {
+		if a == msg.name {
+			delete(m.state.Accounts, id)
+		}
+	}
+	m.hint = "Removed " + msg.name
+	return m.saveState()
 }
 
 func (m *model) switchOne(r deck.Row, name string) tea.Cmd {
@@ -167,38 +275,52 @@ func (m *model) switchOne(r deck.Row, name string) tea.Cmd {
 		m.hint = fmt.Sprintf("%s resumes with %s", r.Name, accounts.Label(name))
 		return m.saveState()
 	}
-	return tea.Batch(m.saveState(), m.queueSwitch([]deck.Row{r}))
+	return tea.Batch(m.saveState(), m.queueSwitch([]deck.Row{r}, 0))
 }
 
 func (m *model) switchAll(name string) tea.Cmd {
 	m.state.Account = name
 	m.state.Accounts = nil
-	return tea.Batch(m.saveState(), m.queueSwitch(m.liveRows()))
+	elsewhere := 0
+	for _, r := range m.active {
+		if r.Kind == deck.Elsewhere {
+			elsewhere++
+		}
+	}
+	return tea.Batch(m.saveState(), m.queueSwitch(m.liveRows(), elsewhere))
 }
 
-func (m *model) queueSwitch(rows []deck.Row) tea.Cmd {
+func waitsForIdle(r deck.Row) bool {
+	return r.Busy || r.Waiting
+}
+
+func (m *model) queueSwitch(rows []deck.Row, elsewhere int) tea.Cmd {
 	if m.switches == nil {
 		m.switches = map[string]bool{}
 	}
-	n, busy := 0, 0
+	n, waiting := 0, 0
 	for _, r := range rows {
 		if m.paneAccount[r.PaneID] != m.state.AccountFor(r.SessionID) {
 			m.switches[r.PaneID] = true
 			n++
-			if r.Busy {
-				busy++
+			if waitsForIdle(r) {
+				waiting++
 			}
 		}
 	}
+	var parts []string
 	switch {
 	case n == 0:
-		m.hint = "Already on that account"
-		return nil
-	case busy > 0:
-		m.hint = fmt.Sprintf("Switching %s, %d when idle", sessionCount(n), busy)
+		parts = append(parts, "Already on that account")
+	case waiting > 0:
+		parts = append(parts, fmt.Sprintf("Switching %s, %d when idle", sessionCount(n), waiting))
 	default:
-		m.hint = "Switching " + sessionCount(n)
+		parts = append(parts, "Switching "+sessionCount(n))
 	}
+	if elsewhere > 0 {
+		parts = append(parts, fmt.Sprintf("%d elsewhere not switched", elsewhere))
+	}
+	m.hint = strings.Join(parts, "; ")
 	return m.advanceSwitches()
 }
 
@@ -209,7 +331,7 @@ func (m *model) advanceSwitches() tea.Cmd {
 		switch {
 		case !ok || m.paneAccount[pane] == m.state.AccountFor(r.SessionID):
 			delete(m.switches, pane)
-		case !r.Busy && !m.resuming[r.SessionID] && m.handoffs[pane] == nil:
+		case !waitsForIdle(r) && !m.resuming[r.SessionID] && m.handoffs[pane] == nil:
 			delete(m.switches, pane)
 			cmds = append(cmds, m.restartRow(r))
 		}
@@ -240,7 +362,7 @@ func (m *model) loginStarted(msg loginMsg) tea.Cmd {
 		m.err = msg.err
 		return nil
 	}
-	m.loginPane = msg.pane
+	m.loginPane, m.loginName = msg.pane, msg.name
 	return tea.Sequence(m.show(msg.pane, "", false), m.focus(tmux.Slot))
 }
 
@@ -250,7 +372,10 @@ func (m *model) endLogin(dead bool, gone bool) tea.Cmd {
 	}
 	pane := m.loginPane
 	m.loginPane = ""
-	m.hint = "Press A to pick the new account"
+	m.hint = m.loginName + " is not logged in"
+	if accounts.LoggedIn(m.home, m.loginName) {
+		m.hint = m.loginName + " is logged in, press A to use it"
+	}
 	cmds := []tea.Cmd{m.showSelected(), m.focus(tmux.ListPane)}
 	if !gone {
 		cmds = append(cmds, m.tmux("kill-pane", "-t", pane))

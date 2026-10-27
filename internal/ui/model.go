@@ -251,6 +251,7 @@ type model struct {
 	switches    map[string]bool
 	paneAccount map[string]string
 	loginPane   string
+	loginName   string
 	handoffs    map[string]*pendingHandoff
 
 	agentMode bool
@@ -398,6 +399,8 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case loginMsg:
 		return m, m.loginStarted(msg)
+	case accountRemovedMsg:
+		return m, m.accountRemoved(msg)
 	case startedMsg:
 		return m, m.started(msg)
 	case restartedMsg:

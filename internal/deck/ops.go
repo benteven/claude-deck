@@ -28,15 +28,17 @@ func (o Ops) Start(cwd, sessionID, name string, resume bool, account string) (st
 	if info, err := os.Stat(cwd); err != nil || !info.IsDir() {
 		return "", fmt.Errorf("folder not found: %s", cwd)
 	}
-	newWindow := []string{"new-window", "-d", "-P", "-F", "#{pane_id}", "-t", tmux.BgSession + ":"}
+	args := []string{paths.ClaudeCommand()}
 	if account != "" {
+		if !accounts.LoggedIn(o.Home, account) {
+			return "", fmt.Errorf("account %s is not logged in, press A to log in", account)
+		}
 		dir, err := accounts.Prepare(o.Home, paths.ClaudeHome(), account)
 		if err != nil {
 			return "", err
 		}
-		newWindow = append(newWindow, "-e", "CLAUDE_CONFIG_DIR="+dir)
+		args = append([]string{"env", "CLAUDE_CONFIG_DIR=" + dir}, args...)
 	}
-	args := []string{paths.ClaudeCommand()}
 	if resume {
 		args = append(args, "--resume", sessionID)
 	} else {
@@ -56,6 +58,7 @@ func (o Ops) Start(cwd, sessionID, name string, resume bool, account string) (st
 	}
 	command := tmux.ShellQuote(shell) + " -lc " + tmux.ShellQuote("exec "+strings.Join(args, " "))
 
+	newWindow := []string{"new-window", "-d", "-P", "-F", "#{pane_id}", "-t", tmux.BgSession + ":"}
 	newWindow = append(newWindow, "-c", strings.ReplaceAll(cwd, "#", "##"), command)
 	paneID, err := o.T.Run(newWindow...)
 	if err != nil {
@@ -77,6 +80,30 @@ func (o Ops) Login(exe, account string) (string, error) {
 	paneID = strings.TrimSpace(paneID)
 	_, err = o.T.Run("set-option", "-p", "-t", paneID, "@deck-role", "login")
 	return paneID, err
+}
+
+func RemoveAccount(deckHome, name string) error {
+	dir := accounts.Dir(deckHome, name)
+	if !accounts.ValidName(name) || !accounts.Exists(deckHome, name) {
+		return fmt.Errorf("no account %q", name)
+	}
+	logout := exec.Command(paths.ClaudeCommand(), "auth", "logout")
+	logout.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+dir)
+	if out, err := logout.CombinedOutput(); err != nil && accounts.LoggedIn(deckHome, name) {
+		return fmt.Errorf("log out of %s: %v: %s", name, err, strings.TrimSpace(string(out)))
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.Type()&os.ModeSymlink != 0 {
+			if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return Trash(dir)
 }
 
 func (o Ops) Show(paneID string) error {
