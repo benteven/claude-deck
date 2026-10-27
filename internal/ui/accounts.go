@@ -66,6 +66,9 @@ func (m *model) accountTag(r deck.Row) string {
 	if r.Kind == deck.Live && m.switches[r.PaneID] {
 		return accounts.Label(cur) + " → " + accounts.Label(m.state.AccountFor(r.SessionID))
 	}
+	if m.split() {
+		return ""
+	}
 	return cur
 }
 

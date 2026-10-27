@@ -116,7 +116,7 @@ func (m *model) hitAt(x, y int) (hit, bool) {
 			line++
 		}
 		extra := 2
-		if len(blocks[i]) > 0 && ansi.Strip(blocks[i][0]) == "Elsewhere" {
+		if m.rowHeader(rows, i) != "" {
 			extra++
 		}
 		for j, text := range blocks[i] {

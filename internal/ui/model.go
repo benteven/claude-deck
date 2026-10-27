@@ -16,6 +16,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/benteven/claude-deck/internal/accounts"
 	"github.com/benteven/claude-deck/internal/deck"
 	"github.com/benteven/claude-deck/internal/events"
 	"github.com/benteven/claude-deck/internal/gh"
@@ -137,6 +138,7 @@ type refreshMsg struct {
 	folders   []string
 	geo       geometry
 	geoOK     bool
+	accounts  []accounts.Account
 	err       error
 }
 
@@ -252,6 +254,7 @@ type model struct {
 	paneAccount map[string]string
 	loginPane   string
 	loginName   string
+	accountList []accounts.Account
 	handoffs    map[string]*pendingHandoff
 
 	agentMode bool
@@ -292,19 +295,20 @@ func Run(version string) error {
 			HooksPath: filepath.Join(home, "hooks.json"),
 			Home:      home,
 		},
-		reader:     reader,
-		home:       home,
-		claudeHome: paths.ClaudeHome(),
-		state:      state,
-		want:       &slotWant{},
-		saver:      &stateSaver{},
-		starts:     &pidStarts{at: map[paneProc]time.Time{}},
-		focused:    true,
-		prs:        loadedPRs(saved),
-		prSem:      make(chan struct{}, prParallel),
-		prSaver:    &prSaver{},
-		noGH:       !hasGH(),
-		version:    version,
+		reader:      reader,
+		home:        home,
+		claudeHome:  paths.ClaudeHome(),
+		accountList: accounts.List(home, paths.ClaudeHome()),
+		state:       state,
+		want:        &slotWant{},
+		saver:       &stateSaver{},
+		starts:      &pidStarts{at: map[paneProc]time.Time{}},
+		focused:     true,
+		prs:         loadedPRs(saved),
+		prSem:       make(chan struct{}, prParallel),
+		prSaver:     &prSaver{},
+		noGH:        !hasGH(),
+		version:     version,
 	}
 	_, err = tea.NewProgram(m).Run()
 	if serr := reader.Save(); err == nil {
@@ -521,6 +525,7 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 		return tea.Sequence(m.showSelected(), m.focus(tmux.Slot))
 	case "n":
 		m.picker = newPicker(m.folders, m.width)
+		m.picker.account, m.picker.accounts = m.cursorAccount(), m.loggedIn()
 		return tea.Batch(m.zoom(true), m.picker.input.Focus())
 	case "s", "r":
 		r, ok := m.current()
@@ -538,8 +543,11 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 		return m.rename.input.Focus()
 	case "t":
 		r, ok := m.current()
-		if !ok || r.Kind != deck.Elsewhere {
+		if !ok {
 			return nil
+		}
+		if r.Kind != deck.Elsewhere {
+			return m.moveAccount(r)
 		}
 		m.takeover = &takeoverDialog{row: r}
 		return m.zoom(true)
@@ -1067,6 +1075,7 @@ func (m *model) refresh() tea.Cmd {
 		if list {
 			msg.agents = runningAgents(ids, msg.events, msg.live, msg.files)
 		}
+		msg.accounts = accounts.List(home, claudeHome)
 		if save {
 			reader.Save()
 		}
@@ -1222,6 +1231,7 @@ func (m *model) apply(msg refreshMsg) tea.Cmd {
 	m.in.Summaries = msg.summaries
 	m.in.Agents = msg.agents
 	m.folders = msg.folders
+	m.accountList = msg.accounts
 
 	var cmds []tea.Cmd
 	cmds = append(cmds, followed, m.endDead(msg.panes, slotPane), m.endLogin(loginDead, loginGone))
@@ -1257,6 +1267,7 @@ func (m *model) rebuild() (moved bool) {
 	before := m.selected
 	m.in.State = m.state
 	m.active, m.suspended = deck.Build(m.in)
+	m.groupActive()
 	if d := m.rename; d != nil {
 		keepOrder(m.active, d.order)
 		keepOrder(m.suspended, d.order)
@@ -1409,9 +1420,15 @@ func (m *model) saveState() tea.Cmd {
 	}
 }
 
-func (m *model) start(cwd string) tea.Cmd {
+func (m *model) start(cwd, account string) tea.Cmd {
 	id := uuid.NewV4().String()
-	ops, account := m.ops, m.state.Account
+	if account != m.state.Account {
+		if m.state.Accounts == nil {
+			m.state.Accounts = map[string]string{}
+		}
+		m.state.Accounts[id] = account
+	}
+	ops := m.ops
 	return func() tea.Msg {
 		pane, err := ops.Start(cwd, id, "", false, account)
 		return startedMsg{id: id, cwd: cwd, pane: pane, err: err}
