@@ -33,6 +33,9 @@ type picker struct {
 	checked string
 	ghost   string
 	ghostOf string
+
+	account  string
+	accounts []string
 }
 
 func pathLike(v string) bool {
@@ -144,7 +147,12 @@ func (m *model) pickerKey(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		m.picker = nil
-		return m.start(p.shown[p.cursor])
+		return m.start(p.shown[p.cursor], p.account)
+	case "ctrl+a":
+		if len(p.accounts) > 1 {
+			p.account = nextAccount(p.accounts, p.account)
+		}
+		return nil
 	case "up":
 		p.cursor = max(p.cursor-1, 0)
 		return nil
@@ -160,6 +168,9 @@ func (m *model) pickerKey(msg tea.KeyPressMsg) tea.Cmd {
 
 func (p *picker) view(w, h int, focused bool) string {
 	body := []string{white.Render("New session"), p.input.View(), ""}
+	if len(p.accounts) > 1 {
+		body[0] += gray.Render(" on ") + orange.Render(accounts.Label(p.account)) + gray.Render(" (ctrl-a changes)")
+	}
 	room := max(h-1-len(body), 1)
 	start := max(p.cursor-room+1, 0)
 	home, _ := os.UserHomeDir()

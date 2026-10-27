@@ -110,24 +110,25 @@ func (m *model) listView(w, h int) string {
 
 func (m *model) layout(w, h int) (blocks [][]string, hint string, room int) {
 	now := time.Now()
-	header := false
-	for i, r := range m.shown() {
-		switch {
-		case m.mode == modeSuspended:
-			blocks = append(blocks, suspendedLines(r, w, now, i == m.cursor, m.focused, m.prState))
-		case r.Kind == deck.Elsewhere && !header:
-			header = true
-			blocks = append(blocks, append([]string{gray.Render("Elsewhere")}, rowLines(r, w, i == m.cursor, m.focused, m.agentAt(i, r), m.prState, m.accountTag(r))...))
-		default:
-			blocks = append(blocks, rowLines(r, w, i == m.cursor, m.focused, m.agentAt(i, r), m.prState, m.accountTag(r)))
+	rows := m.shown()
+	for i, r := range rows {
+		var block []string
+		header := m.rowHeader(rows, i)
+		if header != "" {
+			block = append(block, gray.Render(ansi.Truncate(header, w, "…")))
 		}
+		if m.mode == modeSuspended {
+			block = append(block, suspendedLines(r, w, now, i == m.cursor, m.focused, m.prState)...)
+		} else {
+			block = append(block, rowLines(r, w, i == m.cursor, m.focused, m.agentAt(i, r), m.prState, m.accountTag(r))...)
+		}
+		blocks = append(blocks, block)
 		if m.rename != nil && r.SessionID == m.rename.id {
-			last := blocks[len(blocks)-1]
 			idx := 0
-			if len(last) > 0 && ansi.Strip(last[0]) == "Elsewhere" {
+			if header != "" {
 				idx = 1
 			}
-			last[idx] = m.rename.line(w, m.focused)
+			block[idx] = m.rename.line(w, m.focused)
 		}
 		if m.arts != nil && r.SessionID == m.arts.id {
 			blocks[len(blocks)-1] = append(blocks[len(blocks)-1], m.artifactLines(r, w)...)
@@ -475,6 +476,9 @@ func (m *model) listHint(w int) string {
 	if r, ok := m.current(); ok && r.Kind == deck.Live {
 		text = addItem(text, "R restart", w)
 		text = addItem(text, "c handoff", w)
+		if len(m.loggedIn()) > 1 {
+			text = addItem(text, "t move", w)
+		}
 	}
 	if r, ok := m.current(); ok && len(visiblePRs(r.Summary.PRs, m.prState)) > 0 {
 		text = addItem(text, "o open PR", w)

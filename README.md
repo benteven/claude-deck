@@ -79,7 +79,7 @@ In the list:
 | `A` | Switch account for this session or all sessions, add or remove accounts |
 | `c` | Hand off: Claude writes its state to a note, the deck runs `/clear`, then Claude reads the note back |
 | `g` | Agent mode: `j`/`k` also step through subagents and show the live subagent transcript; Enter opens the parent session |
-| `t` | Take over a session running in another terminal |
+| `t` | Take over a session running in another terminal; on your own session, move it to the next account |
 | `o` | Open the row's pull requests |
 | `a` | List the row's artifacts; Enter opens one |
 | `d` | Move a suspended session to the Trash |
@@ -95,7 +95,7 @@ Use more than one Claude subscription. Press `A`, pick "+ add account", give it 
 
 Each account is a config folder in `~/.config/claude-deck/accounts/<name>`, used as `CLAUDE_CONFIG_DIR`. It links to the shared parts of `~/.claude` (transcripts, live sessions, settings, CLAUDE.md, agents, commands, skills, plugins, history), so `--resume` works on any account. The login and account caches stay apart; Claude Code gives each config folder its own Keychain entry. Trusted folders and MCP servers from `~/.claude.json` are copied to the account each time a session starts.
 
-A switch restarts the session in place. Sessions that are busy or wait for you switch when they are idle. Sessions running elsewhere are not switched.
+When your sessions use more than one account, the Active list groups them under a header per account. `t` moves a session to the next account, and `n` starts on the account of the group under the cursor (`ctrl-a` in the folder list changes it). A switch restarts the session in place. Sessions that are busy or wait for you switch when they are idle. Sessions running elsewhere are not switched.
 
 ## How it works
 
