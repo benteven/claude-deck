@@ -255,7 +255,10 @@ type model struct {
 	loginPane   string
 	loginName   string
 	accountList []accounts.Account
-	handoffs    map[string]*pendingHandoff
+
+	mru      []string
+	cycle    *cycle
+	handoffs map[string]*pendingHandoff
 
 	agentMode bool
 	agent     string
@@ -372,6 +375,11 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.prevSelected = m.selected
 	case tea.BlurMsg:
 		m.focused = false
+		if m.cycle == nil {
+			m.visit(m.slotSession())
+		}
+	case cycleDoneMsg:
+		m.cycleDone(msg)
 	case tickMsg:
 		if m.quitting {
 			return m, nil
@@ -436,6 +444,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		if msg.Text == tmux.NextKey || msg.Text == tmux.PrevKey {
 			return m, m.switchLive(msg.Text == tmux.NextKey)
+		}
+		if msg.Text == tmux.LastKey {
+			return m, m.toggleLast()
 		}
 		m.hint = ""
 		m.err = nil
@@ -679,6 +690,8 @@ func (m *model) selectRow(id string) {
 }
 
 func (m *model) switchTo(r deck.Row) tea.Cmd {
+	m.cycle = nil
+	m.visit(r.SessionID)
 	m.selectRow(r.SessionID)
 	return tea.Sequence(m.show(r.PaneID, "", false), m.focus(tmux.Slot))
 }
@@ -915,6 +928,7 @@ func (m *model) enter() tea.Cmd {
 		m.hint = "running in another terminal"
 		return nil
 	case deck.Live:
+		m.visit(r.SessionID)
 		return tea.Sequence(m.show(r.PaneID, "", false), m.focus(tmux.Slot))
 	case deck.Suspended, deck.Stale:
 		if m.resuming[r.SessionID] {
@@ -964,6 +978,7 @@ func (m *model) started(msg startedMsg) tea.Cmd {
 		m.selected = msg.id
 		m.syncCursor()
 	}
+	m.visit(msg.id)
 	return tea.Batch(m.saveState(), tea.Sequence(m.zoom(false), m.show(msg.pane, "", false), m.focus(tmux.Slot)))
 }
 
@@ -1267,7 +1282,6 @@ func (m *model) rebuild() (moved bool) {
 	before := m.selected
 	m.in.State = m.state
 	m.active, m.suspended = deck.Build(m.in)
-	m.groupActive()
 	if d := m.rename; d != nil {
 		keepOrder(m.active, d.order)
 		keepOrder(m.suspended, d.order)

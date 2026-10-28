@@ -55,7 +55,7 @@ func (m *model) rowAccount(r deck.Row) string {
 	switch r.Kind {
 	case deck.Live:
 		return m.paneAccount[r.PaneID]
-	case deck.Suspended:
+	case deck.Suspended, deck.Stale:
 		return m.state.AccountFor(r.SessionID)
 	}
 	return ""
@@ -66,10 +66,7 @@ func (m *model) accountTag(r deck.Row) string {
 	if r.Kind == deck.Live && m.switches[r.PaneID] {
 		return accounts.Label(cur) + " → " + accounts.Label(m.state.AccountFor(r.SessionID))
 	}
-	if m.split() {
-		return ""
-	}
-	return cur
+	return ""
 }
 
 func (m *model) accountUsers(name string) int {
@@ -136,7 +133,7 @@ func (m *model) accountsView(w, h int) string {
 		if a.Name == m.state.Account {
 			tags = append(tags, "new sessions")
 		}
-		line := selectionBar(i == d.cursor, m.focused) + white.Render(label) + strings.Repeat(" ", col+2-ansi.StringWidth(label)) + email
+		line := selectionBar(i == d.cursor, m.focused) + m.accountStyle(a.Name).Render(label) + strings.Repeat(" ", col+2-ansi.StringWidth(label)) + email
 		if len(tags) > 0 {
 			line += "  " + orange.Render(strings.Join(tags, ", "))
 		}

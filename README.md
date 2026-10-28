@@ -67,7 +67,9 @@ From anywhere:
 | `ctrl-b 1` ... `ctrl-b 9` | Go to session 1 to 9 |
 | `ctrl-b <` / `ctrl-b >` | Narrower or wider list |
 | `ctrl-b ?` | Show all keys |
-| `ctrl-b ctrl-b`, `ctrl-b ctrl-j`, `ctrl-b ctrl-k` | Send that key to Claude Code |
+| `ctrl-q` or `ctrl-b ctrl-b` | Go to the session you used last, like Cmd-Tab; press again within a second to go further back |
+| `ctrl-b ctrl-j`, `ctrl-b ctrl-k`, `ctrl-b ctrl-q` | Send that key to Claude Code |
+| `ctrl-x ctrl-b` | Claude Code's own "run in background" (its `ctrl-b`) |
 
 In the list:
 
@@ -103,7 +105,7 @@ Use more than one Claude subscription. Press `A`, pick "+ add account", give it 
 
 Each account is a config folder in `~/.config/deckhand/accounts/<name>`, used as `CLAUDE_CONFIG_DIR`. It links to the shared parts of `~/.claude` (transcripts, live sessions, settings, CLAUDE.md, agents, commands, skills, plugins, history), so `--resume` works on any account. The login and account caches stay apart; Claude Code gives each config folder its own Keychain entry. Trusted folders and MCP servers from `~/.claude.json` are copied to the account each time a session starts.
 
-When your sessions use more than one account, the Active list groups them under a header per account. `t` moves a session to the next account, and `n` starts on the account of the group under the cursor (`ctrl-a` in the folder list changes it). A switch restarts the session in place. Sessions that are busy or have an open question switch when they are idle. Sessions running elsewhere are not switched.
+Each account has its own color for session names; `A` shows which color is which, and the default account stays white. `t` moves a session to the next account, and `n` starts on the account of the session under the cursor (`ctrl-a` in the folder list changes it). A switch restarts the session in place. Sessions that are busy or have an open question switch when they are idle. Sessions running elsewhere are not switched.
 
 ## How it works
 
