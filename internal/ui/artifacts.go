@@ -77,7 +77,7 @@ func (m *model) artifactLines(r deck.Row, w int) []string {
 		if t := m.artifactTitle(r, u); t != "" {
 			text = white.Render(strings.Join(strings.Fields(textclean.Clean(t)), " "))
 		}
-		line := ansi.Truncate("  "+selectionBar(i == a.cursor, m.focused)+text, w, "…")
+		line := ansi.Truncate("  "+selectionBar(i == a.cursor)+text, w, "…")
 		if linkable(u) {
 			line = ansi.SetHyperlink(u) + line + ansi.ResetHyperlink()
 		}

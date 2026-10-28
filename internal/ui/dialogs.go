@@ -166,7 +166,7 @@ func (m *model) pickerKey(msg tea.KeyPressMsg) tea.Cmd {
 	return tea.Batch(cmd, inspect(p.input.Value()), ghost(p.input.Value()))
 }
 
-func (p *picker) view(w, h int, focused bool) string {
+func (p *picker) view(w, h int) string {
 	body := []string{white.Render("New session"), p.input.View(), ""}
 	if len(p.accounts) > 1 {
 		body[0] += gray.Render(" on ") + orange.Render(accounts.Label(p.account)) + gray.Render(" (ctrl-a changes)")
@@ -179,7 +179,7 @@ func (p *picker) view(w, h int, focused bool) string {
 		if home != "" && (f == home || strings.HasPrefix(f, home+"/")) {
 			f = "~" + f[len(home):]
 		}
-		bar := selectionBar(i == p.cursor, focused)
+		bar := selectionBar(i == p.cursor)
 		if i == 0 && p.resolved() == pathOK {
 			bar += "Start in "
 			if avail := w - ansi.StringWidth(bar); ansi.StringWidth(f) > avail {
@@ -238,8 +238,8 @@ func (m *model) renameKey(msg tea.KeyPressMsg) tea.Cmd {
 	return cmd
 }
 
-func (d *renameDialog) line(w int, focused bool) string {
-	bar := selectionBar(true, focused)
+func (d *renameDialog) line(w int) string {
+	bar := selectionBar(true)
 	d.input.SetWidth(max(w-3, 1))
 	if d.fresh {
 		return ansi.Truncate(bar+reverse.Render(ansi.Truncate(d.name, max(w-2, 1), "…")), w, "")
