@@ -7,20 +7,27 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/benteven/deckhand/internal/deck"
+	"github.com/benteven/deckhand/internal/keys"
 	"github.com/benteven/deckhand/internal/store"
 	"github.com/benteven/deckhand/internal/tmux"
 )
 
-const cycleWindow = 1500 * time.Millisecond
+const (
+	cycleWindow = 1500 * time.Millisecond
+	ctrlPoll    = 40 * time.Millisecond
+)
 
 type cycle struct {
 	order []string
 	i     int
 	seq   int
 	at    time.Time
+	held  bool
 }
 
 type cycleDoneMsg struct{ seq int }
+
+type ctrlPollMsg struct{ seq int }
 
 func (m *model) slotSession() string {
 	for _, r := range m.liveRows() {
@@ -51,7 +58,7 @@ func (m *model) toggleLast(back bool) tea.Cmd {
 	}
 	now := time.Now()
 	c := m.cycle
-	if c == nil || now.Sub(c.at) > cycleWindow {
+	if c == nil || (!c.held && now.Sub(c.at) > cycleWindow) {
 		c = &cycle{order: m.cycleOrder()}
 		m.cycle = c
 	}
@@ -75,10 +82,26 @@ func (m *model) toggleLast(back bool) tea.Cmd {
 	r := rows[i]
 	m.selectRow(r.SessionID)
 	seq := c.seq
-	return tea.Batch(
-		tea.Sequence(m.show(r.PaneID, "", false), m.focus(tmux.Slot)),
-		tea.Tick(cycleWindow, func(time.Time) tea.Msg { return cycleDoneMsg{seq} }),
-	)
+	wait := tea.Tick(cycleWindow, func(time.Time) tea.Msg { return cycleDoneMsg{seq} })
+	if down, known := keys.CtrlDown(); known && down {
+		c.held = true
+		wait = pollCtrl(seq)
+	}
+	return tea.Batch(tea.Sequence(m.show(r.PaneID, "", false), m.focus(tmux.Slot)), wait)
+}
+
+func pollCtrl(seq int) tea.Cmd {
+	return tea.Tick(ctrlPoll, func(time.Time) tea.Msg { return ctrlPollMsg{seq} })
+}
+
+func (m *model) ctrlPolled(msg ctrlPollMsg) tea.Cmd {
+	if c := m.cycle; c == nil || c.seq != msg.seq {
+		return nil
+	}
+	if down, _ := keys.CtrlDown(); down {
+		return pollCtrl(msg.seq)
+	}
+	return m.cycleDone(cycleDoneMsg(msg))
 }
 
 func (m *model) cycleDone(msg cycleDoneMsg) tea.Cmd {

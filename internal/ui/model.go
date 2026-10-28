@@ -376,6 +376,8 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focused = false
 	case cycleDoneMsg:
 		return m, m.cycleDone(msg)
+	case ctrlPollMsg:
+		return m, m.ctrlPolled(msg)
 	case tickMsg:
 		if m.quitting {
 			return m, nil
