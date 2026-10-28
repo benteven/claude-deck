@@ -71,6 +71,18 @@ func (o Ops) Start(cwd, sessionID, name string, resume bool, account string) (st
 	return paneID, nil
 }
 
+func (o Ops) StopJob(job, account string) error {
+	cmd := exec.Command(paths.ClaudeCommand(), "stop", job)
+	cmd.Env = os.Environ()
+	if account != "" {
+		cmd.Env = append(cmd.Env, "CLAUDE_CONFIG_DIR="+accounts.Dir(o.Home, account))
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("claude stop %s: %v: %s", job, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 func (o Ops) Login(exe, account string) (string, error) {
 	command := tmux.ShellQuote(exe) + " login --wait " + tmux.ShellQuote(account)
 	paneID, err := o.T.Run("new-window", "-d", "-P", "-F", "#{pane_id}", "-t", tmux.BgSession+":", command)

@@ -35,7 +35,8 @@ type Row struct {
 	Waiting         bool
 	Busy            bool
 	Asking          bool
-	Parked          bool
+	Job             string
+	JobSession      string
 	Remote          bool
 	LastInteraction time.Time
 	Agents          []transcript.Agent
@@ -68,9 +69,11 @@ func Build(in Inputs) (active, suspended []Row) {
 		seen[e.SessionID] = true
 		ls, isLive := liveByID[e.SessionID]
 		src, parked := jobs[e.SessionID]
+		job, jobSession := "", ""
 		if parked {
 			seen[src] = true
 			ls.Status = liveByID[src].Status
+			job, jobSession = ls.ParkedJob, src
 		} else {
 			src = e.SessionID
 		}
@@ -91,7 +94,8 @@ func Build(in Inputs) (active, suspended []Row) {
 			LastInteraction: latest(e.LastInteraction, sum.PromptedAt),
 			Agents:          cleanAgents(in.Agents[src]),
 			Num:             e.Num,
-			Parked:          parked,
+			Job:             job,
+			JobSession:      jobSession,
 		}
 		if r.PaneID != "" {
 			r.Kind = Live
