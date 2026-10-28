@@ -1023,6 +1023,18 @@ func (m *model) promptKey(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
+func (m *model) syncCwds() bool {
+	changed := false
+	for _, l := range m.in.Live {
+		i := slices.IndexFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == l.SessionID })
+		if i >= 0 && l.Cwd != "" && m.state.Active[i].Cwd != l.Cwd {
+			m.state.Active[i].Cwd = l.Cwd
+			changed = true
+		}
+	}
+	return changed
+}
+
 func (m *model) dropStale(r deck.Row) tea.Cmd {
 	m.state.Active = slices.DeleteFunc(m.state.Active, func(e store.ActiveEntry) bool { return e.SessionID == r.SessionID })
 	m.rebuild()
@@ -1248,6 +1260,9 @@ func (m *model) apply(msg refreshMsg) tea.Cmd {
 
 	var cmds []tea.Cmd
 	cmds = append(cmds, followed, m.endDead(msg.panes, slotPane), m.endLogin(loginDead, loginGone))
+	if m.syncCwds() {
+		cmds = append(cmds, m.saveState())
+	}
 	if m.rebuild() && m.loaded {
 		cmds = append(cmds, m.showSelected())
 	}
