@@ -458,6 +458,10 @@ func (m *model) restartRow(r deck.Row) tea.Cmd {
 		m.err = fmt.Errorf("account %s is not logged in, press A to log in", account)
 		return nil
 	}
+	if r.Parked {
+		m.err = fmt.Errorf("%s runs as a parked background job, restart it from Claude Code", r.Name)
+		return nil
+	}
 	m.resuming[r.SessionID] = true
 	m.markEnding(r.SessionID)
 	delete(m.in.Panes, r.SessionID)

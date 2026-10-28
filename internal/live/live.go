@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -17,6 +18,22 @@ type Session struct {
 	StartedAt  int64  `json:"startedAt"`
 	BridgeID   string `json:"bridgeSessionId"`
 	Kind       string `json:"kind"`
+	ParkedJob  string `json:"parkedJobId"`
+}
+
+func ParkedJobs(sessions []Session) map[string]string {
+	jobs := map[string]string{}
+	for _, s := range sessions {
+		if s.ParkedJob == "" {
+			continue
+		}
+		for _, j := range sessions {
+			if j.Kind == "bg" && strings.HasPrefix(j.SessionID, s.ParkedJob) {
+				jobs[s.SessionID] = j.SessionID
+			}
+		}
+	}
+	return jobs
 }
 
 func Running(claudeHome string) ([]Session, error) {
@@ -31,7 +48,7 @@ func Running(claudeHome string) ([]Session, error) {
 			continue
 		}
 		var s Session
-		if json.Unmarshal(data, &s) != nil || s.PID <= 0 || s.SessionID == "" || s.Kind == "bg" {
+		if json.Unmarshal(data, &s) != nil || s.PID <= 0 || s.SessionID == "" {
 			continue
 		}
 		if err := syscall.Kill(s.PID, 0); err != nil && err != syscall.EPERM {
