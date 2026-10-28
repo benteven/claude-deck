@@ -79,7 +79,7 @@ func Build(in Inputs) (active, suspended []Row) {
 		r := Row{
 			SessionID:       e.SessionID,
 			Name:            name(in.State, e.Name, ls, e.SessionID, sum),
-			Cwd:             firstNonEmpty(e.Cwd, ls.Cwd, sum.Cwd),
+			Cwd:             firstNonEmpty(ls.Cwd, e.Cwd, sum.Cwd),
 			PaneID:          in.Panes[e.SessionID],
 			TranscriptPath:  paths[src],
 			Kind:            Stale,
