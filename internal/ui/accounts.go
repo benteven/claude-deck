@@ -92,7 +92,7 @@ func (m *model) accountsView(w, h int) string {
 		body := []string{
 			white.Render(ansi.Truncate("Name for the new account:", w, "…")),
 			"",
-			ansi.Truncate(selectionBar(true, m.focused)+d.input.View(), w, ""),
+			ansi.Truncate(selectionBar(true)+d.input.View(), w, ""),
 			"",
 			gray.Render(ansi.Truncate("Use a-z, 0-9, - and _. Then log in with that account.", w, "…")),
 		}
@@ -133,7 +133,7 @@ func (m *model) accountsView(w, h int) string {
 		if a.Name == m.state.Account {
 			tags = append(tags, "new sessions")
 		}
-		line := selectionBar(i == d.cursor, m.focused) + m.accountStyle(a.Name).Render(label) + strings.Repeat(" ", col+2-ansi.StringWidth(label)) + email
+		line := selectionBar(i == d.cursor) + m.accountStyle(a.Name).Render(label) + strings.Repeat(" ", col+2-ansi.StringWidth(label)) + email
 		if len(tags) > 0 {
 			line += "  " + orange.Render(strings.Join(tags, ", "))
 		}
@@ -142,7 +142,7 @@ func (m *model) accountsView(w, h int) string {
 			body = append(body, ansi.Truncate("    "+yellow.Render("not shared with ~/.claude: "+strings.Join(u, ", ")), w, "…"))
 		}
 	}
-	body = append(body, ansi.Truncate(selectionBar(d.cursor == len(d.list), m.focused)+gray.Render("+ add account"), w, ""))
+	body = append(body, ansi.Truncate(selectionBar(d.cursor == len(d.list))+gray.Render("+ add account"), w, ""))
 	return page(body, m.accountsFooter(d.hint(), w), h)
 }
 

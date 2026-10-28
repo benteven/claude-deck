@@ -19,6 +19,7 @@ const (
 	NextKey     = "\ue000"
 	PrevKey     = "\ue001"
 	LastKey     = "\ue002"
+	BackKey     = "\ue003"
 )
 
 type Client struct {
@@ -192,6 +193,7 @@ func WriteConf(path string, cfg store.Config) error {
 		slotKey("C-k"),
 		slotKey("C-q"),
 		fmt.Sprintf(`bind -n C-q send-keys -t =deck:main.0 -l %s`, LastKey),
+		fmt.Sprintf(`bind -n C-S-q send-keys -t =deck:main.0 -l %s`, BackKey),
 		fmt.Sprintf(`bind -T deck %s send-keys -t =deck:main.0 -l %s`, p, LastKey),
 		switchKey("C-j", NextKey),
 		switchKey("C-k", PrevKey),

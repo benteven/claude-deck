@@ -67,7 +67,8 @@ From anywhere:
 | `ctrl-b 1` ... `ctrl-b 9` | Go to session 1 to 9 |
 | `ctrl-b <` / `ctrl-b >` | Narrower or wider list |
 | `ctrl-b ?` | Show all keys |
-| `ctrl-q` or `ctrl-b ctrl-b` | Go to the session you used last, like Cmd-Tab; press again within a second to go further back |
+| `ctrl-q` or `ctrl-b ctrl-b` | Like Cmd-Tab: go to the next session in the list, press again to go further; when you pause, the pick moves to the top |
+| `ctrl-shift-q` | The same, from the bottom of the list up |
 | `ctrl-b ctrl-j`, `ctrl-b ctrl-k`, `ctrl-b ctrl-q` | Send that key to Claude Code |
 | `ctrl-x ctrl-b` | Claude Code's own "run in background" (its `ctrl-b`) |
 

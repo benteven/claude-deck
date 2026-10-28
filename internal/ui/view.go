@@ -66,7 +66,7 @@ func (m *model) View() tea.View {
 	var content string
 	switch {
 	case m.picker != nil:
-		content = m.picker.view(w, h, m.focused)
+		content = m.picker.view(w, h)
 	case m.prompt != nil:
 		content = m.prompt.view(w, h)
 	case m.takeover != nil:
@@ -83,8 +83,6 @@ func (m *model) View() tea.View {
 		content = m.helpView(w, h)
 	case m.accounts != nil:
 		content = m.accountsView(w, h)
-	case m.cycle != nil:
-		content = m.switcherView(w, h)
 	default:
 		content = m.listView(w, h)
 	}
@@ -120,9 +118,9 @@ func (m *model) layout(w, h int) (blocks [][]string, hint string, room int) {
 			block = append(block, gray.Render(ansi.Truncate(header, w, "…")))
 		}
 		if m.mode == modeSuspended {
-			block = append(block, suspendedLines(r, w, now, i == m.cursor, m.focused, m.prState, m.nameStyle(r))...)
+			block = append(block, suspendedLines(r, w, now, i == m.cursor, m.prState, m.nameStyle(r))...)
 		} else {
-			block = append(block, rowLines(r, w, i == m.cursor, m.focused, m.agentAt(i, r), m.prState, m.accountTag(r), m.nameStyle(r))...)
+			block = append(block, rowLines(r, w, i == m.cursor, m.agentAt(i, r), m.prState, m.accountTag(r), m.nameStyle(r))...)
 		}
 		blocks = append(blocks, block)
 		if m.rename != nil && r.SessionID == m.rename.id {
@@ -130,7 +128,7 @@ func (m *model) layout(w, h int) (blocks [][]string, hint string, room int) {
 			if header != "" {
 				idx = 1
 			}
-			block[idx] = m.rename.line(w, m.focused)
+			block[idx] = m.rename.line(w)
 		}
 		if m.arts != nil && r.SessionID == m.arts.id {
 			blocks[len(blocks)-1] = append(blocks[len(blocks)-1], m.artifactLines(r, w)...)
@@ -188,8 +186,8 @@ func (m *model) searchLine(w int) string {
 	return ansi.Truncate(yellow.Render("/")+m.query, w, "…")
 }
 
-func suspendedLines(r deck.Row, w int, now time.Time, selected, focused bool, prState func(string) string, name lipgloss.Style) []string {
-	bar := selectionBar(selected, focused)
+func suspendedLines(r deck.Row, w int, now time.Time, selected bool, prState func(string) string, name lipgloss.Style) []string {
+	bar := selectionBar(selected)
 	inner := max(w-2, 1)
 	meta := []string{gray.Render(ago(now, r.LastInteraction))}
 	if r.Cwd != "" {
@@ -262,22 +260,18 @@ func page(body []string, hint string, h int) string {
 	return strings.Join(append(body, hint), "\n")
 }
 
-func selectionBar(selected, focused bool) string {
-	switch {
-	case !selected:
+func selectionBar(selected bool) string {
+	if !selected {
 		return "  "
-	case focused:
-		return orange.Render("▌") + " "
-	default:
-		return gray.Render("▌") + " "
 	}
+	return orange.Render("▌") + " "
 }
 
-func rowLines(r deck.Row, w int, selected, focused bool, agent int, prState func(string) string, account string, name lipgloss.Style) []string {
+func rowLines(r deck.Row, w int, selected bool, agent int, prState func(string) string, account string, name lipgloss.Style) []string {
 	if r.Kind == deck.Stale {
-		return staleLines(r, w, selected, focused, prState)
+		return staleLines(r, w, selected, prState)
 	}
-	bar := selectionBar(selected, focused)
+	bar := selectionBar(selected)
 	inner := max(w-2, 1)
 
 	mark := ""
@@ -291,8 +285,14 @@ func rowLines(r deck.Row, w int, selected, focused bool, agent int, prState func
 	if account != "" {
 		ctx += gray.Render(" · " + account)
 	}
+	if selected {
+		name = name.Bold(true)
+	}
 	lines := []string{nameLine(r.Name, name, mark, r.Num, r.Remote, inner), ctx}
 	lines = append(lines, agentLines(r.Agents, inner, true)...)
+	if selected {
+		lines = append(lines, detailLines(r, inner)...)
+	}
 
 	var extra []string
 	for _, pr := range visiblePRs(r.Summary.PRs, prState) {
@@ -308,11 +308,32 @@ func rowLines(r deck.Row, w int, selected, focused bool, agent int, prState func
 	for i, l := range lines {
 		b := bar
 		if agent >= 0 {
-			b = selectionBar(i == 2+agent, focused)
+			b = selectionBar(i == 2+agent)
 		}
 		lines[i] = ansi.Truncate(b+l, w, "")
 	}
 	return lines
+}
+
+func detailLines(r deck.Row, width int) []string {
+	var where []string
+	if r.Cwd != "" {
+		where = append(where, textclean.Clean(filepath.Base(r.Cwd)))
+	}
+	if b := r.Summary.Branch; b != "" {
+		where = append(where, textclean.Clean(b))
+	}
+	if !r.LastInteraction.IsZero() {
+		where = append(where, ago(time.Now(), r.LastInteraction))
+	}
+	var out []string
+	if len(where) > 0 {
+		out = append(out, gray.Render(ansi.Truncate(strings.Join(where, " · "), width, "…")))
+	}
+	if p := strings.Join(strings.Fields(textclean.Clean(r.Summary.LastPrompt)), " "); p != "" {
+		out = append(out, gray.Render("› ")+white.Render(ansi.Truncate(p, max(width-2, 1), "…")))
+	}
+	return out
 }
 
 func agentLines(agents []transcript.Agent, width int, colored bool) []string {
@@ -335,8 +356,8 @@ func agentLines(agents []transcript.Agent, width int, colored bool) []string {
 	return out
 }
 
-func staleLines(r deck.Row, w int, selected, focused bool, prState func(string) string) []string {
-	bar := selectionBar(selected, focused)
+func staleLines(r deck.Row, w int, selected bool, prState func(string) string) []string {
+	bar := selectionBar(selected)
 	pct := r.Summary.ContextPercent()
 	filled := min(max(pct, 0), 100) * barCells / 100
 	lines := []string{
