@@ -1058,6 +1058,9 @@ func (m *model) refresh() tea.Cmd {
 		msg := refreshMsg{panes: panes, files: files, folders: folders, events: map[string]events.State{}, summaries: map[string]transcript.Summary{}}
 		msg.geo, msg.geoOK = sampleGeometry(t)
 		msg.live, _ = live.Running(claudeHome)
+		for _, job := range live.ParkedJobs(msg.live) {
+			ids = append(ids, job)
+		}
 		msg.starts = map[int]time.Time{}
 		keys := map[paneProc]bool{}
 		for _, p := range panes {

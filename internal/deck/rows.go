@@ -35,6 +35,7 @@ type Row struct {
 	Waiting         bool
 	Busy            bool
 	Asking          bool
+	Parked          bool
 	Remote          bool
 	LastInteraction time.Time
 	Agents          []transcript.Agent
@@ -61,18 +62,26 @@ func Build(in Inputs) (active, suspended []Row) {
 		paths[f.SessionID] = f.Path
 	}
 	seen := make(map[string]bool, len(in.State.Active))
+	jobs := live.ParkedJobs(in.Live)
 
 	for _, e := range in.State.Active {
 		seen[e.SessionID] = true
-		sum := in.Summaries[e.SessionID]
 		ls, isLive := liveByID[e.SessionID]
-		ev := in.Events[e.SessionID]
+		src, parked := jobs[e.SessionID]
+		if parked {
+			seen[src] = true
+			ls.Status = liveByID[src].Status
+		} else {
+			src = e.SessionID
+		}
+		sum := in.Summaries[src]
+		ev := in.Events[src]
 		r := Row{
 			SessionID:       e.SessionID,
 			Name:            name(in.State, e.Name, ls, e.SessionID, sum),
 			Cwd:             firstNonEmpty(e.Cwd, ls.Cwd, sum.Cwd),
 			PaneID:          in.Panes[e.SessionID],
-			TranscriptPath:  paths[e.SessionID],
+			TranscriptPath:  paths[src],
 			Kind:            Stale,
 			Summary:         sum,
 			Waiting:         ev.Waiting(),
@@ -80,8 +89,9 @@ func Build(in Inputs) (active, suspended []Row) {
 			Asking:          isLive && ls.Status == "waiting",
 			Remote:          isLive && ls.BridgeID != "",
 			LastInteraction: latest(e.LastInteraction, sum.PromptedAt),
-			Agents:          cleanAgents(in.Agents[e.SessionID]),
+			Agents:          cleanAgents(in.Agents[src]),
 			Num:             e.Num,
+			Parked:          parked,
 		}
 		if r.PaneID != "" {
 			r.Kind = Live
@@ -90,7 +100,8 @@ func Build(in Inputs) (active, suspended []Row) {
 	}
 
 	for _, ls := range in.Live {
-		if seen[ls.SessionID] {
+		if seen[ls.SessionID] || ls.Kind == "bg" {
+			seen[ls.SessionID] = true
 			continue
 		}
 		seen[ls.SessionID] = true
