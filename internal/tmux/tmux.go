@@ -182,6 +182,10 @@ func slotKey(key string) string {
 	return fmt.Sprintf(`bind -T deck %s send-keys -t =deck:main.1 %s \; select-pane -t =deck:main.1`, key, key)
 }
 
+func listClick(event, other string) string {
+	return fmt.Sprintf(`bind -n %s if-shell -F -t = "#{==:#{@deck-role},list}" { send-keys -M -t = } { %s }`, event, other)
+}
+
 func WriteConf(path string, cfg store.Config) error {
 	p := cfg.Prefix
 	lines := []string{
@@ -200,6 +204,9 @@ func WriteConf(path string, cfg store.Config) error {
 	}
 	lines = append(lines,
 		"set -g mouse on",
+		listClick("MouseDown1Pane", "select-pane -t = ; send-keys -M"),
+		listClick("DoubleClick1Pane", `select-pane -t = ; if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" { send-keys -M } { copy-mode -H ; send-keys -X select-word }`),
+		listClick("TripleClick1Pane", `select-pane -t = ; if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" { send-keys -M } { copy-mode -H ; send-keys -X select-line }`),
 		"set -g remain-on-exit on",
 		"set -g focus-events on",
 		"set -g extended-keys always",
