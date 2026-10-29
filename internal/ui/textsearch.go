@@ -22,7 +22,11 @@ func (m *model) searchText() tea.Cmd {
 	if m.mode != modeSuspended {
 		return nil
 	}
-	query, index := m.query, m.index
+	return m.indexText(m.query)
+}
+
+func (m *model) indexText(query string) tea.Cmd {
+	index := m.index
 	paths := map[string]string{}
 	for _, r := range m.suspended {
 		if r.TranscriptPath != "" {
