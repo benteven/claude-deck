@@ -118,7 +118,7 @@ func (m *model) layout(w, h int) (blocks [][]string, hint string, room int) {
 			block = append(block, gray.Render(ansi.Truncate(header, w, "…")))
 		}
 		if m.mode == modeSuspended {
-			block = append(block, suspendedLines(r, w, now, i == m.cursor, m.prState, m.nameStyle(r))...)
+			block = append(block, suspendedLines(r, w, now, i == m.cursor, m.prState, m.nameStyle(r), m.textHit(r.SessionID), m.query)...)
 		} else {
 			block = append(block, rowLines(r, w, i == m.cursor, m.agentAt(i, r), m.prState, m.accountTag(r), m.nameStyle(r))...)
 		}
@@ -180,13 +180,17 @@ func (m *model) emptyText() string {
 }
 
 func (m *model) searchLine(w int) string {
+	line := yellow.Render("/") + m.query
 	if m.searching {
-		return ansi.Truncate(m.search.View(), w, "")
+		line = m.search.View()
 	}
-	return ansi.Truncate(yellow.Render("/")+m.query, w, "…")
+	if m.textPending() {
+		line += gray.Render("  searching")
+	}
+	return ansi.Truncate(line, w, "…")
 }
 
-func suspendedLines(r deck.Row, w int, now time.Time, selected bool, prState func(string) prStatus, name lipgloss.Style) []string {
+func suspendedLines(r deck.Row, w int, now time.Time, selected bool, prState func(string) prStatus, name lipgloss.Style, hit, query string) []string {
 	bar := selectionBar(selected)
 	inner := max(w-2, 1)
 	meta := []string{gray.Render(ago(now, r.LastInteraction))}
@@ -199,6 +203,9 @@ func suspendedLines(r deck.Row, w int, now time.Time, selected bool, prState fun
 	lines := []string{
 		name.Render(ansi.Truncate(r.Name, inner, "…")),
 		fitItems(meta, inner),
+	}
+	if hit != "" {
+		lines = append(lines, ansi.Truncate(highlight(textclean.Clean(hit), query), inner, "…"))
 	}
 	for i, l := range lines {
 		lines[i] = ansi.Truncate(bar+l, w, "")
@@ -571,4 +578,18 @@ func (m *model) tabsLine(w int) string {
 		a, s = current.Render(a), white.Render(s)
 	}
 	return ansi.Truncate(a+"  "+s, w, "")
+}
+
+func highlight(text, query string) string {
+	lower := strings.ToLower(text)
+	terms := strings.Fields(strings.ToLower(query))
+	if len(lower) != len(text) || len(terms) == 0 {
+		return gray.Render(text)
+	}
+	at := strings.Index(lower, terms[0])
+	if at < 0 {
+		return gray.Render(text)
+	}
+	end := at + len(terms[0])
+	return gray.Render(text[:at]) + yellow.Render(text[at:end]) + gray.Render(text[end:])
 }

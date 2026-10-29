@@ -84,7 +84,7 @@ In the list:
 | `1` ... `9` | Go to that session |
 | Tab | Switch between Active and Suspended |
 | `?` | Show all keys |
-| `/` | Search names, prompts, folders, branches and PR numbers |
+| `/` | Search names, prompts, folders, branches and PR numbers; in Suspended, also the whole conversation |
 | `n` | New session in a recent folder |
 | `s` | Suspend: rename it, then stop it |
 | `r` | Rename |

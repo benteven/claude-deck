@@ -33,7 +33,7 @@ func helpSections(prefix string) []helpSection {
 			{"esc", "Back to the session you came from"},
 			{"1-9", "Go to that session"},
 			{"tab", "Switch between Active and Suspended"},
-			{"/", "Search"},
+			{"/", "Search; in Suspended also the whole conversation"},
 			{"n", "New session in any folder"},
 			{"s", "Suspend: rename, then stop"},
 			{"r", "Rename"},
