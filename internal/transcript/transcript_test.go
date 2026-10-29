@@ -64,3 +64,18 @@ func TestSummaryIncremental(t *testing.T) {
 	s, _ = NewReader(cache).Summary(path)
 	assert.Equal(t, "Renamed", s.AITitle)
 }
+
+func TestIndexSearch(t *testing.T) {
+	path := copyFixture(t)
+	x := NewIndex()
+	s, ok := x.Search(path, []string{"account", "view"})
+	assert.True(t, ok)
+	assert.Equal(t, "Please look at the account view", s)
+	_, ok = x.Search(path, []string{"typedesign1"})
+	assert.False(t, ok, "tool output is not indexed")
+
+	appendRaw(t, path, `{"type":"assistant","message":{"content":[{"type":"text","text":"The Invoice  table\nis ready"}]}}`+"\n")
+	s, ok = x.Search(path, []string{"invoice"})
+	assert.True(t, ok)
+	assert.Equal(t, "The Invoice table is ready", s)
+}

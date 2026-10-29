@@ -215,6 +215,8 @@ type model struct {
 	query     string
 	searching bool
 	search    textinput.Model
+	index     *transcript.Index
+	text      textHits
 	resuming  map[string]bool
 	batch     map[string]bool
 	prompt    *resumePrompt
@@ -290,6 +292,7 @@ func Run(version string) error {
 	search.SetStyles(styles)
 	m := &model{
 		search:   search,
+		index:    transcript.NewIndex(),
 		resuming: map[string]bool{},
 		batch:    map[string]bool{},
 		ops: deck.Ops{
@@ -412,6 +415,8 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.loginStarted(msg)
 	case accountRemovedMsg:
 		return m, m.accountRemoved(msg)
+	case textHitsMsg:
+		return m, m.gotTextHits(msg)
 	case startedMsg:
 		return m, m.started(msg)
 	case restartedMsg:
@@ -522,7 +527,7 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 		return m.resizeList(widthStep)
 	case "/":
 		m.searching = true
-		return m.search.Focus()
+		return tea.Batch(m.search.Focus(), m.searchText())
 	case "esc":
 		if m.query != "" {
 			return m.clearSearch()
@@ -848,11 +853,10 @@ func (m *model) selectIndex(i int) tea.Cmd {
 }
 
 func (m *model) shown() []deck.Row {
-	rows := m.active
 	if m.mode == modeSuspended {
-		rows = m.suspended
+		return m.shownSuspended()
 	}
-	return deck.Filter(rows, m.query)
+	return deck.Filter(m.active, m.query)
 }
 
 func (m *model) setMode(mode int) bool {
@@ -910,7 +914,7 @@ func (m *model) searchKey(msg tea.KeyPressMsg) tea.Cmd {
 		m.query = value
 		m.cursor, m.selected = 0, ""
 		m.syncCursor()
-		cmd = tea.Batch(cmd, m.showSelected())
+		cmd = tea.Batch(cmd, m.showSelected(), m.searchText())
 	}
 	return cmd
 }
