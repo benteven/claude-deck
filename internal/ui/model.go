@@ -47,6 +47,7 @@ const (
 
 type prEntry struct {
 	state   string
+	checks  string
 	checked time.Time
 	until   time.Time
 	pending bool
@@ -62,7 +63,7 @@ func prRecheck(state string, checked time.Time) time.Time {
 func loadedPRs(saved map[string]store.PRState) map[string]*prEntry {
 	prs := make(map[string]*prEntry, len(saved))
 	for url, s := range saved {
-		prs[url] = &prEntry{state: s.State, checked: s.Checked, until: prRecheck(s.State, s.Checked)}
+		prs[url] = &prEntry{state: s.State, checks: s.Checks, checked: s.Checked, until: prRecheck(s.State, s.Checked)}
 	}
 	return prs
 }
@@ -71,7 +72,7 @@ func (m *model) savePRs() tea.Cmd {
 	snap := map[string]store.PRState{}
 	for url, e := range m.prs {
 		if e.state != "" {
-			snap[url] = store.PRState{State: e.state, Checked: e.checked}
+			snap[url] = store.PRState{State: e.state, Checks: e.checks, Checked: e.checked}
 		}
 	}
 	sv, home := m.prSaver, m.home
@@ -89,8 +90,8 @@ func (m *model) savePRs() tea.Cmd {
 }
 
 type prStateMsg struct {
-	url, state string
-	err        error
+	url, state, checks string
+	err                error
 }
 
 type paneProc struct {
@@ -403,7 +404,7 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			e.until = time.Now().Add(prErrorTTL)
 		} else {
-			e.state, e.checked = msg.state, time.Now()
+			e.state, e.checks, e.checked = msg.state, msg.checks, time.Now()
 			e.until = prRecheck(e.state, e.checked)
 			return m, m.savePRs()
 		}
@@ -1497,20 +1498,20 @@ func (m *model) fetchPRs() tea.Cmd {
 			cmds = append(cmds, func() tea.Msg {
 				sem <- struct{}{}
 				defer func() { <-sem }()
-				state, err := gh.State(url)
-				return prStateMsg{url: url, state: state, err: err}
+				state, checks, err := gh.State(url)
+				return prStateMsg{url: url, state: state, checks: checks, err: err}
 			})
 		}
 	}
 	return tea.Batch(cmds...)
 }
 
-func (m *model) prState(url string) string {
+func (m *model) prState(url string) prStatus {
 	if e := m.prs[url]; e != nil && e.state != "" {
-		return e.state
+		return prStatus{e.state, e.checks}
 	}
 	if m.noGH {
-		return "unknown"
+		return prStatus{state: "unknown"}
 	}
-	return ""
+	return prStatus{}
 }

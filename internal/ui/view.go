@@ -186,7 +186,7 @@ func (m *model) searchLine(w int) string {
 	return ansi.Truncate(yellow.Render("/")+m.query, w, "…")
 }
 
-func suspendedLines(r deck.Row, w int, now time.Time, selected bool, prState func(string) string, name lipgloss.Style) []string {
+func suspendedLines(r deck.Row, w int, now time.Time, selected bool, prState func(string) prStatus, name lipgloss.Style) []string {
 	bar := selectionBar(selected)
 	inner := max(w-2, 1)
 	meta := []string{gray.Render(ago(now, r.LastInteraction))}
@@ -267,7 +267,7 @@ func selectionBar(selected bool) string {
 	return orange.Render("▌") + " "
 }
 
-func rowLines(r deck.Row, w int, selected bool, agent int, prState func(string) string, account string, name lipgloss.Style) []string {
+func rowLines(r deck.Row, w int, selected bool, agent int, prState func(string) prStatus, account string, name lipgloss.Style) []string {
 	if r.Kind == deck.Stale {
 		return staleLines(r, w, selected, prState)
 	}
@@ -356,7 +356,7 @@ func agentLines(agents []transcript.Agent, width int, colored bool) []string {
 	return out
 }
 
-func staleLines(r deck.Row, w int, selected bool, prState func(string) string) []string {
+func staleLines(r deck.Row, w int, selected bool, prState func(string) prStatus) []string {
 	bar := selectionBar(selected)
 	pct := r.Summary.ContextPercent()
 	filled := min(max(pct, 0), 100) * barCells / 100
@@ -395,10 +395,10 @@ func fitItems(items []string, width int) string {
 	return out
 }
 
-func visiblePRs(prs []transcript.PRLink, prState func(string) string) []transcript.PRLink {
+func visiblePRs(prs []transcript.PRLink, prState func(string) prStatus) []transcript.PRLink {
 	var out []transcript.PRLink
 	for _, pr := range prs {
-		if s := prState(pr.URL); s == "open" || s == "draft" || s == "unknown" {
+		if s := prState(pr.URL).state; s == "open" || s == "draft" || s == "unknown" {
 			out = append(out, pr)
 		}
 	}
@@ -408,6 +408,8 @@ func visiblePRs(prs []transcript.PRLink, prState func(string) string) []transcri
 func linkable(url string) bool {
 	return strings.HasPrefix(url, "https://") && !strings.ContainsFunc(url, func(r rune) bool { return r <= ' ' || r == 0x7f })
 }
+
+type prStatus struct{ state, checks string }
 
 func prIcon(state string) string {
 	switch state {
@@ -419,7 +421,7 @@ func prIcon(state string) string {
 	return ""
 }
 
-func prText(pr transcript.PRLink, state string, colored bool) string {
+func prText(pr transcript.PRLink, st prStatus, colored bool) string {
 	text := fmt.Sprintf("#%d", pr.Number)
 	if colored {
 		text = blue.Render(text)
@@ -427,14 +429,26 @@ func prText(pr transcript.PRLink, state string, colored bool) string {
 	if linkable(pr.URL) {
 		text = ansi.SetHyperlink(pr.URL) + text + ansi.ResetHyperlink()
 	}
-	icon := prIcon(state)
+	icon := prIcon(st.state)
 	switch {
 	case icon == "":
 		return text
 	case colored:
-		return blue.Render(icon) + " " + text
+		return checkStyle(st.checks).Render(icon) + " " + text
 	}
 	return icon + " " + text
+}
+
+func checkStyle(checks string) lipgloss.Style {
+	switch checks {
+	case "pass":
+		return green
+	case "fail":
+		return red
+	case "pending":
+		return yellow
+	}
+	return blue
 }
 
 func contextLine(pct int) string {

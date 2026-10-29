@@ -136,7 +136,7 @@ func (m *model) linkAt(prs []transcript.PRLink, line string, x int) string {
 			continue
 		}
 		from := ansi.StringWidth(line[:open])
-		if prIcon(m.prState(pr.URL)) != "" {
+		if prIcon(m.prState(pr.URL).state) != "" {
 			from -= 2
 		}
 		to := ansi.StringWidth(line)

@@ -9,34 +9,58 @@ import (
 	"time"
 )
 
-func State(url string) (string, error) {
+type check struct {
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+	State      string `json:"state"`
+}
+
+func State(url string) (state, checks string, err error) {
 	if !strings.HasPrefix(url, "https://") {
-		return "", fmt.Errorf("not a PR url: %q", url)
+		return "", "", fmt.Errorf("not a PR url: %q", url)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "gh", "pr", "view", url, "--json", "state,isDraft")
+	cmd := exec.CommandContext(ctx, "gh", "pr", "view", url, "--json", "state,isDraft,statusCheckRollup")
 	cmd.WaitDelay = 3 * time.Second
 	out, err := cmd.Output()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	var v struct {
-		State   string `json:"state"`
-		IsDraft bool   `json:"isDraft"`
+		State   string  `json:"state"`
+		IsDraft bool    `json:"isDraft"`
+		Checks  []check `json:"statusCheckRollup"`
 	}
 	if err := json.Unmarshal(out, &v); err != nil {
-		return "", err
+		return "", "", err
 	}
 	switch {
 	case v.State == "OPEN" && v.IsDraft:
-		return "draft", nil
+		return "draft", rollup(v.Checks), nil
 	case v.State == "OPEN":
-		return "open", nil
+		return "open", rollup(v.Checks), nil
 	case v.State == "MERGED":
-		return "merged", nil
+		return "merged", "", nil
 	case v.State == "CLOSED":
-		return "closed", nil
+		return "closed", "", nil
 	}
-	return "", fmt.Errorf("unknown PR state %q", v.State)
+	return "", "", fmt.Errorf("unknown PR state %q", v.State)
+}
+
+func rollup(checks []check) string {
+	if len(checks) == 0 {
+		return ""
+	}
+	result := "pass"
+	for _, c := range checks {
+		switch {
+		case c.State == "FAILURE" || c.State == "ERROR",
+			c.Status == "COMPLETED" && c.Conclusion != "SUCCESS" && c.Conclusion != "NEUTRAL" && c.Conclusion != "SKIPPED":
+			return "fail"
+		case c.State == "PENDING" || c.State == "EXPECTED" || (c.State == "" && c.Status != "COMPLETED"):
+			result = "pending"
+		}
+	}
+	return result
 }

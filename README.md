@@ -54,7 +54,7 @@ Active 4  Suspended 23
   billing spike                  ┃
 ```
 
-Each row shows the context used, open pull requests, the artifacts it published, running subagents, a mark when the session waits for you, and a yellow dot next to the number when remote control is on.
+Each row shows the context used, open pull requests (● open, ○ draft; green when checks pass, yellow while they run, red when one fails), the artifacts it published, running subagents, a mark when the session waits for you, and a yellow dot next to the number when remote control is on.
 
 ### Keys
 

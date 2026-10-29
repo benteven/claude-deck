@@ -155,6 +155,7 @@ func (s State) Save(dir string) error {
 
 type PRState struct {
 	State   string    `json:"state"`
+	Checks  string    `json:"checks,omitempty"`
 	Checked time.Time `json:"checked"`
 }
 
