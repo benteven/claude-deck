@@ -527,7 +527,7 @@ func (m *model) key(msg tea.KeyPressMsg) tea.Cmd {
 		return m.resizeList(widthStep)
 	case "/":
 		m.searching = true
-		return tea.Batch(m.search.Focus(), m.searchText())
+		return m.search.Focus()
 	case "esc":
 		if m.query != "" {
 			return m.clearSearch()
@@ -1279,6 +1279,7 @@ func (m *model) apply(msg refreshMsg) tea.Cmd {
 			m.cursor, m.selected = i, m.active[i].SessionID
 		}
 		m.prevSelected = m.selected
+		cmds = append(cmds, m.indexText(""))
 		if n := len(m.staleRows()); n > 0 {
 			m.prompt = &resumePrompt{count: n}
 		} else if i < 0 {
