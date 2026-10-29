@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/benteven/deckhand/internal/deck"
+	"github.com/benteven/deckhand/internal/tmux"
 	"github.com/benteven/deckhand/internal/transcript"
 )
 
@@ -48,7 +49,7 @@ func (m *model) click(ms tea.Mouse) tea.Cmd {
 		return nil
 	}
 	if ms.Y == 0 {
-		return m.clickTab(ms.X)
+		return tea.Batch(m.clickTab(ms.X), m.focus(tmux.ListPane))
 	}
 	h, ok := m.hitAt(ms.X, ms.Y)
 	if !ok {
@@ -60,7 +61,11 @@ func (m *model) click(ms tea.Mouse) tea.Cmd {
 		return openURLs([]string{h.url})
 	}
 	if h.count {
-		return tea.Batch(m.selectIndex(h.row), m.openArtifacts(m.shown()[h.row]))
+		cmd := tea.Batch(m.selectIndex(h.row), m.openArtifacts(m.shown()[h.row]))
+		if m.arts != nil {
+			cmd = tea.Batch(cmd, m.focus(tmux.ListPane))
+		}
+		return cmd
 	}
 	if m.agentMode && h.agent >= 0 && h.agent < len(visibleAgents(m.shown()[h.row])) {
 		return m.selectAgent(h.row, h.agent)
@@ -69,7 +74,7 @@ func (m *model) click(ms tea.Mouse) tea.Cmd {
 		m.cursor, m.selected = h.row, r.SessionID
 		return m.enter()
 	}
-	return m.selectIndex(h.row)
+	return tea.Batch(m.selectIndex(h.row), m.focus(tmux.ListPane))
 }
 
 type hit struct {
