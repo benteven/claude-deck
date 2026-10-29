@@ -10,6 +10,10 @@ import (
 )
 
 type check struct {
+	Name       string `json:"name"`
+	Context    string `json:"context"`
+	Workflow   string `json:"workflowName"`
+	StartedAt  string `json:"startedAt"`
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion"`
 	State      string `json:"state"`
@@ -52,11 +56,21 @@ func rollup(checks []check) string {
 	if len(checks) == 0 {
 		return ""
 	}
-	result := "pass"
+	latest := map[string]check{}
 	for _, c := range checks {
+		key := c.Workflow + "/" + c.Name + c.Context
+		if prev, ok := latest[key]; !ok || c.StartedAt > prev.StartedAt {
+			latest[key] = c
+		}
+	}
+	result := "pass"
+	for _, c := range latest {
+		switch c.Conclusion {
+		case "SUCCESS", "NEUTRAL", "SKIPPED", "CANCELLED":
+			continue
+		}
 		switch {
-		case c.State == "FAILURE" || c.State == "ERROR",
-			c.Status == "COMPLETED" && c.Conclusion != "SUCCESS" && c.Conclusion != "NEUTRAL" && c.Conclusion != "SKIPPED":
+		case c.State == "FAILURE" || c.State == "ERROR", c.Status == "COMPLETED":
 			return "fail"
 		case c.State == "PENDING" || c.State == "EXPECTED" || (c.State == "" && c.Status != "COMPLETED"):
 			result = "pending"
