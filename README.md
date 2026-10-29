@@ -88,7 +88,7 @@ In the list:
 | `n` | New session in a recent folder |
 | `s` | Suspend: rename it, then stop it |
 | `r` | Rename |
-| `R` | Restart the session in place, for example after Claude Code updates |
+| `R` | Restart the session in place, for example after Claude Code updates. A session that Claude Code parked into a background job is stopped there and resumed in the pane |
 | `A` | Switch account for this session or all sessions, add or remove accounts |
 | `c` | Hand off: Claude writes its state to a note, the deck runs `/clear`, then Claude reads the note back |
 | `g` | Agent mode: `j`/`k` also step through subagents and show the live subagent transcript; Enter opens the parent session |

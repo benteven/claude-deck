@@ -421,9 +421,9 @@ func (m *model) withoutGone(files []transcript.File) []transcript.File {
 type restartDialog struct{ row deck.Row }
 
 type restartedMsg struct {
-	row  deck.Row
-	pane string
-	err  error
+	row      deck.Row
+	id, pane string
+	err      error
 
 	stopFailed bool
 }
@@ -458,22 +458,27 @@ func (m *model) restartRow(r deck.Row) tea.Cmd {
 		m.err = fmt.Errorf("account %s is not logged in, press A to log in", account)
 		return nil
 	}
-	if r.Parked {
-		m.err = fmt.Errorf("%s runs as a parked background job, restart it from Claude Code", r.Name)
-		return nil
-	}
 	m.resuming[r.SessionID] = true
 	m.markEnding(r.SessionID)
 	delete(m.in.Panes, r.SessionID)
 	m.rebuild()
-	ops := m.ops
+	ops, from := m.ops, m.paneAccount[r.PaneID]
 	name := m.state.Names[r.SessionID]
+	id := r.SessionID
+	if r.JobSession != "" {
+		id = r.JobSession
+	}
 	run := func() tea.Msg {
+		if r.Job != "" {
+			if err := ops.StopJob(r.Job, from); err != nil {
+				return restartedMsg{row: r, err: err, stopFailed: true}
+			}
+		}
 		if err := ops.Stop(r.PaneID, r.Busy); err != nil {
 			return restartedMsg{row: r, err: err, stopFailed: true}
 		}
-		pane, err := ops.Start(r.Cwd, r.SessionID, name, true, account)
-		return restartedMsg{row: r, pane: pane, err: err}
+		pane, err := ops.Start(r.Cwd, id, name, true, account)
+		return restartedMsg{row: r, id: id, pane: pane, err: err}
 	}
 	return tea.Sequence(m.showSelected(), run)
 }
@@ -496,7 +501,30 @@ func (m *model) restarted(msg restartedMsg) tea.Cmd {
 	if m.in.Panes == nil {
 		m.in.Panes = map[string]string{}
 	}
+	if msg.id != id {
+		m.moveSession(id, msg.id)
+		id = msg.id
+	}
 	m.in.Panes[id] = msg.pane
 	m.rebuild()
-	return m.showSelected()
+	return tea.Batch(m.saveState(), m.showSelected())
+}
+
+func (m *model) moveSession(from, to string) {
+	for i := range m.state.Active {
+		if m.state.Active[i].SessionID == from {
+			m.state.Active[i].SessionID = to
+		}
+	}
+	if n, ok := m.state.Names[from]; ok {
+		m.state.Names[to] = n
+		delete(m.state.Names, from)
+	}
+	if a, ok := m.state.Accounts[from]; ok {
+		m.state.Accounts[to] = a
+		delete(m.state.Accounts, from)
+	}
+	if m.selected == from {
+		m.selected = to
+	}
 }
