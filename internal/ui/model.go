@@ -253,11 +253,12 @@ type model struct {
 	help     *helpScreen
 	accounts *accountDialog
 
-	switches    map[string]bool
-	paneAccount map[string]string
-	loginPane   string
-	loginName   string
-	accountList []accounts.Account
+	switches      map[string]bool
+	continueAfter map[string]bool
+	paneAccount   map[string]string
+	loginPane     string
+	loginName     string
+	accountList   []accounts.Account
 
 	cycle    *cycle
 	handoffs map[string]*pendingHandoff
@@ -1293,7 +1294,7 @@ func (m *model) apply(msg refreshMsg) tea.Cmd {
 		m.agent = ""
 		cmds = append(cmds, m.showSelected())
 	}
-	cmds = append(cmds, m.fetchPRs(), m.advanceHandoffs(time.Now()), m.advanceSwitches())
+	cmds = append(cmds, m.fetchPRs(), m.advanceHandoffs(time.Now()), m.advanceLimits(time.Now()), m.advanceSwitches())
 	return tea.Batch(cmds...)
 }
 
@@ -1441,7 +1442,7 @@ func (m *model) tmux(args ...string) tea.Cmd {
 func (m *model) saveState() tea.Cmd {
 	sv, home := m.saver, m.home
 	sv.mu.Lock()
-	sv.state = store.State{Names: maps.Clone(m.state.Names), Active: slices.Clone(m.state.Active), Account: m.state.Account, Accounts: maps.Clone(m.state.Accounts)}
+	sv.state = store.State{Names: maps.Clone(m.state.Names), Active: slices.Clone(m.state.Active), Account: m.state.Account, Accounts: maps.Clone(m.state.Accounts), Limits: maps.Clone(m.state.Limits), Fallbacks: maps.Clone(m.state.Fallbacks)}
 	sv.mu.Unlock()
 	return func() tea.Msg {
 		sv.mu.Lock()
@@ -1461,18 +1462,19 @@ func (m *model) start(cwd, account string) tea.Cmd {
 		}
 		m.state.Accounts[id] = account
 	}
+	account = m.launchAccount(id, account)
 	ops := m.ops
 	return func() tea.Msg {
-		pane, err := ops.Start(cwd, id, "", false, account)
+		pane, err := ops.Start(cwd, id, "", false, account, "")
 		return startedMsg{id: id, cwd: cwd, pane: pane, err: err}
 	}
 }
 
 func (m *model) resume(r deck.Row) tea.Cmd {
-	ops, account := m.ops, m.state.AccountFor(r.SessionID)
+	ops, account := m.ops, m.launchAccount(r.SessionID, m.state.AccountFor(r.SessionID))
 	name := m.state.Names[r.SessionID]
 	return func() tea.Msg {
-		pane, err := ops.Start(r.Cwd, r.SessionID, name, true, account)
+		pane, err := ops.Start(r.Cwd, r.SessionID, name, true, account, "")
 		return startedMsg{id: r.SessionID, cwd: r.Cwd, name: r.Name, pane: pane, err: err}
 	}
 }

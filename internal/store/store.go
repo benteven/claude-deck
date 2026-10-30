@@ -79,10 +79,12 @@ type ActiveEntry struct {
 }
 
 type State struct {
-	Names    map[string]string `json:"names"`
-	Active   []ActiveEntry     `json:"active"`
-	Account  string            `json:"account,omitempty"`
-	Accounts map[string]string `json:"accounts,omitempty"`
+	Names     map[string]string    `json:"names"`
+	Active    []ActiveEntry        `json:"active"`
+	Account   string               `json:"account,omitempty"`
+	Accounts  map[string]string    `json:"accounts,omitempty"`
+	Limits    map[string]time.Time `json:"limits,omitempty"`
+	Fallbacks map[string]string    `json:"fallbacks,omitempty"`
 }
 
 func (s State) AccountFor(sessionID string) string {
