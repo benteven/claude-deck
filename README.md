@@ -110,6 +110,8 @@ Each account is a config folder in `~/.config/deckhand/accounts/<name>`, used as
 
 Each account has its own color for session names; `A` shows which color is which, and the default account stays white. `t` moves a session to the next account, and `n` starts on the account of the session under the cursor (`ctrl-a` in the folder list changes it). A switch restarts the session in place. Sessions that are busy or have an open question switch when they are idle. Sessions running elsewhere are not switched.
 
+When a session hits a usage limit, the deck moves it to an account without a limit and sends "continue". The account for new sessions comes first, then the others in order. New sessions and resumes also skip a limited account. After the reset, moved sessions go back to their own account when they are idle and not on screen. The row shows "● limit" with the reset time while no account is free, and `A` shows which accounts are limited.
+
 ## How it works
 
 deckhand runs its own tmux server (socket `deckhand`), so your own tmux setup is not touched. The list is a Bubble Tea program in the left pane. Each Claude Code session is a real process in its own tmux pane, swapped into the right side when you select it.

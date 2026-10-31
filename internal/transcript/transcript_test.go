@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,4 +79,22 @@ func TestIndexSearch(t *testing.T) {
 	s, ok = x.Search(path, []string{"invoice"})
 	assert.True(t, ok)
 	assert.Equal(t, "The Invoice table is ready", s)
+}
+
+func TestSummaryLimit(t *testing.T) {
+	path := copyFixture(t)
+	r := NewReader(filepath.Join(t.TempDir(), "cache.json"))
+	appendRaw(t, path, `{"type":"assistant","timestamp":"2026-10-29T15:31:32.208Z","message":{"model":"<synthetic>","content":[{"type":"text","text":"You've hit your weekly limit · resets Nov 1 at 12am (Europe/Oslo)"}]},"error":"rate_limit"}`+"\n")
+	s, err := r.Summary(path)
+	require.NoError(t, err)
+	oslo, err := time.LoadLocation("Europe/Oslo")
+	require.NoError(t, err)
+	assert.True(t, s.Limit.Resets.Equal(time.Date(2026, 11, 1, 0, 0, 0, 0, oslo)), s.Limit.Resets)
+
+	at := time.Date(2026, 10, 29, 16, 0, 0, 0, oslo)
+	assert.True(t, resetTime("resets 3:30pm (Europe/Oslo)", at).Equal(time.Date(2026, 10, 30, 15, 30, 0, 0, oslo)))
+
+	appendRaw(t, path, `{"type":"assistant","message":{"model":"claude-opus-5-5","content":[{"type":"text","text":"Back."}]}}`+"\n")
+	s, _ = r.Summary(path)
+	assert.Zero(t, s.Limit)
 }

@@ -468,6 +468,11 @@ func (m *model) restartRow(r deck.Row) tea.Cmd {
 	if r.JobSession != "" {
 		id = r.JobSession
 	}
+	prompt := ""
+	if m.continueAfter[r.SessionID] {
+		delete(m.continueAfter, r.SessionID)
+		prompt = "continue"
+	}
 	run := func() tea.Msg {
 		if r.Job != "" {
 			if err := ops.StopJob(r.Job, from); err != nil {
@@ -477,7 +482,7 @@ func (m *model) restartRow(r deck.Row) tea.Cmd {
 		if err := ops.Stop(r.PaneID, r.Busy); err != nil {
 			return restartedMsg{row: r, err: err, stopFailed: true}
 		}
-		pane, err := ops.Start(r.Cwd, id, name, true, account)
+		pane, err := ops.Start(r.Cwd, id, name, true, account, prompt)
 		return restartedMsg{row: r, id: id, pane: pane, err: err}
 	}
 	return tea.Sequence(m.showSelected(), run)
@@ -523,6 +528,10 @@ func (m *model) moveSession(from, to string) {
 	if a, ok := m.state.Accounts[from]; ok {
 		m.state.Accounts[to] = a
 		delete(m.state.Accounts, from)
+	}
+	if a, ok := m.state.Fallbacks[from]; ok {
+		m.state.Fallbacks[to] = a
+		delete(m.state.Fallbacks, from)
 	}
 	if m.selected == from {
 		m.selected = to

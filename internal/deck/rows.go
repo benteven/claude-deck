@@ -84,6 +84,7 @@ func Build(in Inputs) (active, suspended []Row) {
 			Name:            name(in.State, e.Name, ls, e.SessionID, sum),
 			Cwd:             firstNonEmpty(ls.Cwd, e.Cwd, sum.Cwd),
 			PaneID:          in.Panes[e.SessionID],
+			Started:         startTime(ls.StartedAt),
 			TranscriptPath:  paths[src],
 			Kind:            Stale,
 			Summary:         sum,

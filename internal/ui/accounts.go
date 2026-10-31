@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -112,7 +113,7 @@ func (m *model) accountsView(w, h int) string {
 		title = `Account for "` + d.row.Name + `"`
 	}
 	body := []string{white.Render(ansi.Truncate(title, w, "…")), ""}
-	col := 0
+	col, now := 0, time.Now()
 	for _, a := range d.list {
 		col = max(col, ansi.StringWidth(accounts.Label(a.Name)))
 	}
@@ -136,6 +137,9 @@ func (m *model) accountsView(w, h int) string {
 		line := selectionBar(i == d.cursor) + m.accountStyle(a.Name).Render(label) + strings.Repeat(" ", col+2-ansi.StringWidth(label)) + email
 		if len(tags) > 0 {
 			line += "  " + orange.Render(strings.Join(tags, ", "))
+		}
+		if t, ok := m.limitedUntil(a.Name, now); ok {
+			line += "  " + red.Render("limit until "+resetLabel(t, now))
 		}
 		body = append(body, ansi.Truncate(line, w, "…"))
 		if u := d.unshared[a.Name]; len(u) > 0 {
@@ -262,6 +266,12 @@ func (m *model) accountRemoved(msg accountRemovedMsg) tea.Cmd {
 			delete(m.state.Accounts, id)
 		}
 	}
+	for id, a := range m.state.Fallbacks {
+		if a == msg.name {
+			delete(m.state.Fallbacks, id)
+		}
+	}
+	delete(m.state.Limits, msg.name)
 	m.hint = "Removed " + msg.name
 	return m.saveState()
 }
@@ -271,6 +281,7 @@ func (m *model) switchOne(r deck.Row, name string) tea.Cmd {
 		m.state.Accounts = map[string]string{}
 	}
 	m.state.Accounts[r.SessionID] = name
+	delete(m.state.Fallbacks, r.SessionID)
 	if r.Kind != deck.Live {
 		m.hint = fmt.Sprintf("%s resumes with %s", r.Name, accounts.Label(name))
 		return m.saveState()
@@ -281,6 +292,7 @@ func (m *model) switchOne(r deck.Row, name string) tea.Cmd {
 func (m *model) switchAll(name string) tea.Cmd {
 	m.state.Account = name
 	m.state.Accounts = nil
+	m.state.Fallbacks = nil
 	elsewhere := 0
 	for _, r := range m.active {
 		if r.Kind == deck.Elsewhere {

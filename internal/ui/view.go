@@ -283,6 +283,8 @@ func rowLines(r deck.Row, w int, selected bool, agent int, prState func(string) 
 
 	mark := ""
 	switch {
+	case limitFresh(r):
+		mark = " " + red.Render("● limit")
 	case r.Kind == deck.Live && r.Waiting:
 		mark = " " + yellow.Render("● waiting")
 	case r.Kind == deck.Elsewhere:
@@ -291,6 +293,9 @@ func rowLines(r deck.Row, w int, selected bool, agent int, prState func(string) 
 	ctx := contextLine(r.Summary.ContextPercent())
 	if account != "" {
 		ctx += gray.Render(" · " + account)
+	}
+	if limitFresh(r) {
+		ctx += red.Render(" · resets " + resetLabel(r.Summary.Limit.Resets, time.Now()))
 	}
 	if selected {
 		name = name.Bold(true)

@@ -33,6 +33,7 @@ type Summary struct {
 	PRs            []PRLink
 	Artifacts      []string
 	ArtifactTitles map[string]string
+	Limit          Limit
 	LastUsed       time.Time
 	PromptedAt     time.Time
 }
@@ -78,7 +79,7 @@ func ValidID(id string) bool {
 	return id != "" && id == filepath.Base(id) && !strings.HasPrefix(id, ".")
 }
 
-const cacheVersion = 5
+const cacheVersion = 6
 
 type entry struct {
 	Version int
@@ -287,6 +288,7 @@ func apply(e *entry, line []byte) {
 			addPR(&e.Summary, PRLink{Number: rec.PRNumber, URL: rec.PRURL, Repo: rec.PRRepo})
 		}
 	}
+	noteLimit(e, line)
 	noteToolCalls(e, line)
 	applyToolResults(e, line)
 	if bytes.Contains(line, artifactMark) {
